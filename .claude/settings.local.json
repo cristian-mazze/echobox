@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "defaultMode": "prompt",
+    "allowedPermissions": {
+      "Read": true,
+      "Edit": true,
+      "Write": true,
+      "Bash": true,
+      "Glob": true,
+      "Grep": true,
+      "Artifact": true
+    }
+  },
+  "model": {
+    "default": "claude-opus-5-5",
+    "thinkingBudget": 4000
+  },
+  "rules": [
+    {
+      "pattern": "*.c,*.h",
+      "instructions": [
+        "NO COMMENTS in this code",
+        "Use PascalCase for types, snake_case for functions/variables, UPPER_SNAKE_CASE for constants",
+        "Functions must be under 20 lines",
+        "Maximum 4 parameters per function",
+        "Use const for read-only data",
+        "Never use heap, recursion, or VLAs",
+        "Check architecture layer dependencies - only link targets you depend on",
+        "Run 'ctest --preset dev' after any change"
+      ]
+    }
+  ]
+}

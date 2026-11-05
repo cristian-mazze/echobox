@@ -1,0 +1,22 @@
+{
+  "hooks": {
+    "postEdit": [
+      {
+        "matcher": {
+          "file_pattern": "\\.c$"
+        },
+        "action": {
+          "name": "validate_echo_pod_code.c"
+        }
+      },
+      {
+        "matcher": {
+          "file_pattern": "\\.h$"
+        },
+        "action": {
+          "name": "validate_echo_pod_code.h"
+        }
+      }
+    ]
+  }
+}
