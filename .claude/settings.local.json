@@ -1,6 +1,6 @@
 {
   "permissions": {
-    "defaultMode": "prompt",
+    "defaultMode": "acceptEdits",
     "allowedPermissions": {
       "Read": true,
       "Edit": true,
@@ -11,10 +11,7 @@
       "Artifact": true
     }
   },
-  "model": {
-    "default": "claude-opus-5-5",
-    "thinkingBudget": 4000
-  },
+  "model": "claude-opus-5-5",
   "rules": [
     {
       "pattern": "*.c,*.h",
