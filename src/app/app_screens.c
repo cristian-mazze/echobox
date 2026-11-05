@@ -25,7 +25,8 @@ enum {
     MUSIC_ARTISTS_ENTRY = 1,
     MUSIC_ALBUMS_ENTRY = 3,
     MUSIC_PLAYLISTS_ENTRY = 7,
-    MUSIC_FAVORITES_ENTRY = 8
+    MUSIC_FAVORITES_ENTRY = 8,
+    HOME_SETTINGS_ITEM = 3
 };
 
 static const MusicEntry MUSIC_ENTRIES[MUSIC_ITEM_COUNT] = {
@@ -181,7 +182,7 @@ static void build_home(AppScreens *screens, AppScreensContext context)
         app_screens_open_item(i18n_text(STR_RESCAN_MUSIC_TITLE), &screens->music.screen);
     screens->home_items[1] = shelf_item(screens, context, SPOKEN_AUDIOBOOK);
     screens->home_items[2] = shelf_item(screens, context, SPOKEN_PODCAST);
-    screens->home_items[3] =
+    screens->home_items[HOME_SETTINGS_ITEM] =
         app_screens_open_item(i18n_text(STR_MENU_SETTINGS), &screens->settings.menu.screen);
     screens->home_items[4] =
         app_screens_open_item(i18n_text(STR_DIAG_TITLE), &screens->diagnostics.screen);
@@ -238,6 +239,13 @@ static int music_path(AppScreens *screens, int entry, Screen **path)
     path[0] = &screens->music.screen;
     path[1] = browse_screen_for(browse);
     return path[1] != NULL ? START_PATH_CAPACITY : 1;
+}
+
+Screen *app_screens_open_language(AppScreens *screens)
+{
+    list_view_select(&screens->home.list, HOME_SETTINGS_ITEM, 0);
+    list_view_select(&screens->settings.menu.list, SETTINGS_LANGUAGE_ITEM, 0);
+    return &screens->settings.menu.screen;
 }
 
 int app_screens_start_path(AppScreens *screens, StartScreen start, Screen **path)

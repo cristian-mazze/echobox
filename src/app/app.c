@@ -725,7 +725,7 @@ static void open_start_screen(uint32_t now_ms)
     }
 }
 
-static void start_screens(uint32_t now_ms)
+static void build_screens(uint32_t now_ms)
 {
     AppScreensContext context = {
         .options = &app.options,
@@ -744,8 +744,13 @@ static void start_screens(uint32_t now_ms)
     };
     Screen *root = app_screens_init(&app.screens, context);
     screen_stack_init(&app.stack, root, now_ms);
-    open_start_screen(now_ms);
     use_screen_key_behaviors();
+}
+
+static void start_screens(uint32_t now_ms)
+{
+    build_screens(now_ms);
+    open_start_screen(now_ms);
 }
 
 static void report_card_files(CardFilesReport files, uint32_t now_ms)
@@ -779,6 +784,9 @@ static void follow_language(void)
     if (app.settings.settings.language != app.shown_language) {
         app.shown_language = app.settings.settings.language;
         apply_language(app.shown_language);
+        build_screens(app.now_ms);
+        screen_stack_apply(&app.stack, screen_action_push(app_screens_open_language(&app.screens)),
+                           app.now_ms);
     }
 }
 
