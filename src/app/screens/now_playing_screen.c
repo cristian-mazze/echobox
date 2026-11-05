@@ -7,14 +7,12 @@
 #include "core/string_builder.h"
 #include "gfx/image.h"
 #include "settings/settings.h"
-#include "ui/header.h"
 #include "ui/icons.h"
 #include "ui/label.h"
 #include "ui/marquee.h"
 
 enum {
-    COVER_TOP = 30,
-    COVER_GAP = 12,
+    COVER_GAP = 8,
     TITLE_TOP = 28,
     ARTIST_TOP = 50,
     ALBUM_TOP = 70,
@@ -35,8 +33,7 @@ enum {
     STATUS_CAPACITY = 64,
     BITRATE_CAPACITY = 24,
     RATE_CAPACITY = 16,
-    PORTRAIT_COVER_GAP = 12,
-    PORTRAIT_TEXT_GAP = 10,
+    PORTRAIT_TEXT_GAP = 4,
     PORTRAIT_FORMAT_GAP = 4,
     PORTRAIT_BOTTOM_MARGIN = 2,
     PORTRAIT_PROGRESS_GAP = 3,
@@ -46,6 +43,7 @@ enum {
 typedef struct Layout {
     int cover_left;
     int cover_top;
+    int cover_size;
     int title_top;
     int format_top;
     int detail_top;
@@ -405,34 +403,57 @@ static bool current_cover(const NowPlayingScreen *now_playing, Image *image)
            cover_cache_full(covers, now_playing->album_index, image) == COVER_LOADED;
 }
 
-static Layout layout_of(const NowPlayingScreen *now_playing)
+static Layout landscape_layout(const Theme *theme)
 {
-    const Theme *theme = now_playing->config.theme;
-    if (!theme_is_portrait(theme)) {
-        return (Layout){
-            theme->metrics.padding, COVER_TOP, TITLE_TOP, FORMAT_TOP, DETAIL_TOP, MODES_TOP,
-            PROGRESS_TOP,           TIMES_TOP, false};
-    }
-    Image ignored;
-    int cover_top = theme->metrics.header_height + PORTRAIT_COVER_GAP;
-    int title_top = cover_top + COVER_FULL_SIZE + PORTRAIT_TEXT_GAP;
-    if (!current_cover(now_playing, &ignored)) {
-        title_top = cover_top + (COVER_FULL_SIZE + PORTRAIT_TEXT_GAP) / 2;
-    }
+    int size = theme->metrics.screen_height - theme->metrics.header_height;
+    return (Layout){0,           theme->metrics.header_height,
+                    size,        TITLE_TOP,
+                    FORMAT_TOP,  DETAIL_TOP,
+                    MODES_TOP,   PROGRESS_TOP,
+                    TIMES_TOP,   false};
+}
+
+static int portrait_cover_size(const Theme *theme, int cover_top, int detail_top)
+{
+    int text_block = 3 * TEXT_LINE_HEIGHT + PORTRAIT_FORMAT_GAP + SMALL_LINE_HEIGHT;
+    int size = detail_top - text_block - PORTRAIT_TEXT_GAP - cover_top;
+    return size < theme->metrics.screen_width ? size : theme->metrics.screen_width;
+}
+
+static Layout portrait_layout(const Theme *theme, bool has_cover)
+{
+    int cover_top = theme->metrics.status_height;
     int times_top = theme->metrics.screen_height - SMALL_LINE_HEIGHT - PORTRAIT_BOTTOM_MARGIN;
     int progress_top = times_top - TIMES_GAP - PROGRESS_HEIGHT;
     int modes_top = progress_top - PORTRAIT_PROGRESS_GAP - SMALL_LINE_HEIGHT;
+    int detail_top = modes_top - SMALL_LINE_HEIGHT;
+    int size = portrait_cover_size(theme, cover_top, detail_top);
+    int title_top = cover_top + size + PORTRAIT_TEXT_GAP;
+    if (!has_cover) {
+        title_top = cover_top + (size + PORTRAIT_TEXT_GAP) / 2;
+    }
     return (Layout){
-        .cover_left = (theme->metrics.screen_width - COVER_FULL_SIZE) / 2,
+        .cover_left = (theme->metrics.screen_width - size) / 2,
         .cover_top = cover_top,
+        .cover_size = size,
         .title_top = title_top,
         .format_top = title_top + 3 * TEXT_LINE_HEIGHT + PORTRAIT_FORMAT_GAP,
-        .detail_top = modes_top - SMALL_LINE_HEIGHT,
+        .detail_top = detail_top,
         .modes_top = modes_top,
         .progress_top = progress_top,
         .times_top = times_top,
         .centered = true,
     };
+}
+
+static Layout layout_of(const NowPlayingScreen *now_playing)
+{
+    const Theme *theme = now_playing->config.theme;
+    if (!theme_is_portrait(theme)) {
+        return landscape_layout(theme);
+    }
+    Image ignored;
+    return portrait_layout(theme, current_cover(now_playing, &ignored));
 }
 
 static int text_left(const NowPlayingScreen *now_playing)
@@ -442,7 +463,7 @@ static int text_left(const NowPlayingScreen *now_playing)
     if (theme_is_portrait(now_playing->config.theme) || !current_cover(now_playing, &ignored)) {
         return padding;
     }
-    return padding + COVER_FULL_SIZE + COVER_GAP;
+    return landscape_layout(now_playing->config.theme).cover_size + COVER_GAP;
 }
 
 static Label centered_if(bool centered, const Font *font, Label label)
@@ -470,14 +491,8 @@ static void draw_cover(const NowPlayingScreen *now_playing, Canvas *canvas)
     }
     Layout layout = layout_of(now_playing);
     image_draw_quad(canvas, cover,
-                    (Quad){layout.cover_left, COVER_FULL_SIZE, layout.cover_top, COVER_FULL_SIZE,
-                           layout.cover_top, COVER_FULL_SIZE});
-}
-
-static Rect line_area(const Theme *theme, int top, int height)
-{
-    int padding = theme->metrics.padding;
-    return (Rect){padding, top, theme->metrics.screen_width - 2 * padding, height};
+                    (Quad){layout.cover_left, layout.cover_size, layout.cover_top,
+                           layout.cover_size, layout.cover_top, layout.cover_size});
 }
 
 static void draw_text_line(const NowPlayingScreen *now_playing, Canvas *canvas, Label label,
@@ -523,7 +538,7 @@ static uint32_t shown_position(const NowPlayingScreen *now_playing)
 static void draw_progress(const NowPlayingScreen *now_playing, Canvas *canvas)
 {
     const Theme *theme = now_playing->config.theme;
-    Rect bar = line_area(theme, layout_of(now_playing).progress_top, PROGRESS_HEIGHT);
+    Rect bar = column_area(now_playing, layout_of(now_playing).progress_top, PROGRESS_HEIGHT);
     bool volume = showing(now_playing, NOW_PLAYING_FEEDBACK_VOLUME);
     int filled = volume ? now_playing_volume_width(now_playing->status.volume, bar.width)
                         : now_playing_progress_width(shown_position(now_playing),
@@ -557,7 +572,7 @@ static void draw_times(const NowPlayingScreen *now_playing, Canvas *canvas)
         StringBuilder level = string_builder_make(remaining, sizeof remaining);
         string_builder_append_unsigned(&level, now_playing->status.volume);
     }
-    Rect area = line_area(theme, layout_of(now_playing).times_top, SMALL_LINE_HEIGHT);
+    Rect area = column_area(now_playing, layout_of(now_playing).times_top, SMALL_LINE_HEIGHT);
     TextStyle style = {.font = theme->fonts.small, .color = theme->colors.text_secondary};
     label_draw(canvas, style, (Label){.area = area, .text = elapsed});
     draw_right_aligned(canvas, style, area, remaining);
@@ -667,8 +682,8 @@ static void draw_badge(const NowPlayingScreen *now_playing, Canvas *canvas)
     }
     const Theme *theme = now_playing->config.theme;
     Layout layout = layout_of(now_playing);
-    int center_x = layout.cover_left + COVER_FULL_SIZE / 2;
-    int center_y = layout.cover_top + COVER_FULL_SIZE / 2;
+    int center_x = layout.cover_left + layout.cover_size / 2;
+    int center_y = layout.cover_top + layout.cover_size / 2;
     Rect badge = {center_x - BADGE_SIZE / 2, center_y - BADGE_SIZE / 2, BADGE_SIZE, BADGE_SIZE};
     Rect icon = {center_x - BADGE_ICON_SIZE / 2, center_y - BADGE_ICON_SIZE / 2, BADGE_ICON_SIZE,
                  BADGE_ICON_SIZE};
@@ -689,8 +704,8 @@ static void draw(void *context, Canvas *canvas)
 {
     const NowPlayingScreen *now_playing = context;
     const Theme *theme = now_playing->config.theme;
-    canvas_fill_rect(canvas, theme_content_area(theme), theme->colors.background);
-    header_draw(canvas, theme, now_playing->screen.title);
+    canvas_fill_rect(canvas, (Rect){0, 0, theme->metrics.screen_width, theme->metrics.screen_height},
+                     theme->colors.background);
     if (!now_playing->status.has_track) {
         draw_nothing_playing(theme, canvas);
         return;
