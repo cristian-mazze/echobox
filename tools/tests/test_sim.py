@@ -215,6 +215,16 @@ class TestParser(unittest.TestCase):
         self.assertEqual(args.key, "card")
         self.assertEqual(args.value, "/new/path")
 
+    def test_parse_debug_no_args(self):
+        args = sim.parse_arguments(["debug"])
+        self.assertEqual(args.command, "debug")
+        self.assertEqual(args.extra, [])
+
+    def test_parse_debug_with_extra(self):
+        args = sim.parse_arguments(["debug", "some-arg", "another-arg"])
+        self.assertEqual(args.command, "debug")
+        self.assertEqual(args.extra, ["some-arg", "another-arg"])
+
 
 class TestSimulatorPath(unittest.TestCase):
     def test_returns_none_for_unbuilt_simulator(self):

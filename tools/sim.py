@@ -330,7 +330,8 @@ def parse_arguments(argv):
     test_parser = subparsers.add_parser("test", help="Run tests")
     test_parser.add_argument("filter", nargs="?", default="")
 
-    subparsers.add_parser("debug", help="Run under lldb")
+    debug_parser = subparsers.add_parser("debug", help="Run under lldb")
+    debug_parser.add_argument("extra", nargs=argparse.REMAINDER)
 
     card_parser = subparsers.add_parser("card", help="Generate test library")
     card_parser.add_argument("--tracks", type=int, default=48)
@@ -656,10 +657,25 @@ def cmd_debug(args):
 
     simulator_args = build_simulator_args(config, args.extra)
 
-    lldb_cmd = ["lldb", "--", exe_path] + simulator_args
+    debugger_exe = None
+    if sys.platform == "win32":
+        lldb_path = pathlib.Path(r"C:\msys64\clang64\bin\lldb.exe")
+        if lldb_path.exists():
+            debugger_exe = str(lldb_path)
+        else:
+            print("Warning: lldb not found on Windows. Running simulator directly.")
+            debugger_exe = None
+    else:
+        debugger_exe = "lldb"
 
-    print(f"Launching: {' '.join(lldb_cmd)}")
-    result = subprocess.run(lldb_cmd, text=True)
+    if debugger_exe:
+        cmd_list = [debugger_exe, "--", exe_path] + simulator_args
+    else:
+        cmd_list = [exe_path] + simulator_args
+
+    print(f"Launching: {' '.join(cmd_list)}")
+    env = tool_environment()
+    result = subprocess.run(cmd_list, text=True, env=env)
     return result.returncode
 
 
