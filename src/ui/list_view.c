@@ -7,7 +7,6 @@
 
 enum {
     MIN_THUMB_HEIGHT = 6,
-    SHINE_HEIGHT = 1,
     NARROW_DETAIL_SHARE = 30,
     PERCENT = 100,
     SECTION_HEIGHT_SHARE = 2,
@@ -266,12 +265,7 @@ static void draw_label(const ListView *view, Canvas *canvas, Row row, uint32_t n
 static void draw_row(const ListView *view, Canvas *canvas, Row row, uint32_t now_ms)
 {
     if (row.selected) {
-        const ThemeColors *colors = &view->theme->colors;
-        Rect shine = {row.area.x, row.area.y, row.area.width, SHINE_HEIGHT};
-        Rect bar = {row.area.x, row.area.y + SHINE_HEIGHT, row.area.width,
-                    row.area.height - SHINE_HEIGHT};
-        canvas_fill_rect(canvas, shine, colors->selection_shine);
-        canvas_fill_gradient(canvas, bar, colors->selection_top, colors->selection_background);
+        canvas_fill_rect(canvas, row.area, view->theme->colors.selection_background);
     }
     draw_label(view, canvas, draw_detail(view, canvas, draw_chevron(view, canvas, row)), now_ms);
 }
@@ -287,6 +281,7 @@ static void draw_scrollbar(const ListView *view, Canvas *canvas, Rect area, int 
     int thumb_height = max_of(MIN_THUMB_HEIGHT, track.height * rows / item_count(view));
     int shown = top < hidden ? top : hidden;
     int thumb_top = track.y + (track.height - thumb_height) * shown / hidden;
+    canvas_fill_rect(canvas, track, theme->colors.surface);
     canvas_fill_rect(canvas, (Rect){track.x, thumb_top, track.width, thumb_height},
                      theme->colors.scrollbar_thumb);
 }

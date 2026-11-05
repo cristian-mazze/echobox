@@ -7,6 +7,7 @@
 
 typedef struct ThemeColors {
     Color background;
+    Color surface;
     Color text;
     Color text_secondary;
     Color text_tertiary;

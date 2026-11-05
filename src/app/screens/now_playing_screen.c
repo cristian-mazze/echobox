@@ -512,8 +512,8 @@ static void draw_text_line(const NowPlayingScreen *now_playing, Canvas *canvas, 
 static void draw_track_text(const NowPlayingScreen *now_playing, Canvas *canvas)
 {
     const Theme *theme = now_playing->config.theme;
-    TextStyle title = {.font = theme->fonts.title, .color = theme->colors.text};
-    TextStyle artist = {.font = theme->fonts.body, .color = theme->colors.text_secondary};
+    TextStyle title = {.font = theme->fonts.title, .color = theme->colors.selection_background};
+    TextStyle artist = {.font = theme->fonts.body, .color = theme->colors.text};
     TextStyle album = {.font = theme->fonts.body, .color = theme->colors.text_tertiary};
     int top = layout_of(now_playing).title_top;
     draw_text_line(now_playing, canvas,
@@ -544,8 +544,8 @@ static void draw_progress(const NowPlayingScreen *now_playing, Canvas *canvas)
                         : now_playing_progress_width(shown_position(now_playing),
                                                      now_playing->status.duration_ms, bar.width);
     Color fill =
-        now_playing->scrubbing || volume ? theme->colors.selection_background : theme->colors.text;
-    canvas_fill_rect(canvas, bar, theme->colors.divider);
+        now_playing->scrubbing || volume ? theme->colors.text : theme->colors.selection_background;
+    canvas_fill_rect(canvas, bar, theme->colors.surface);
     canvas_fill_rect(canvas, (Rect){bar.x, bar.y, filled, bar.height}, fill);
 }
 

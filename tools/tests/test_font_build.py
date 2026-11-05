@@ -91,9 +91,9 @@ class SourceTest(unittest.TestCase):
         self.assertIn(".bitmap_size = 2,", source)
 
     def test_header_declares_every_font(self):
-        header = font_build.header_source(["inter_regular_12", "inter_semibold_16"])
-        self.assertIn("extern const Font FONT_INTER_REGULAR_12;", header)
-        self.assertIn("extern const Font FONT_INTER_SEMIBOLD_16;", header)
+        header = font_build.header_source(["terminus_regular_12", "terminus_bold_16"])
+        self.assertIn("extern const Font FONT_TERMINUS_REGULAR_12;", header)
+        self.assertIn("extern const Font FONT_TERMINUS_BOLD_16;", header)
 
 
 class OutputComparisonTest(unittest.TestCase):

@@ -100,7 +100,7 @@ static Color fill_color(const Theme *theme, StatusBarState state)
         return theme->colors.success;
     }
     return state.battery_percent <= STATUS_BAR_LOW_BATTERY_PERCENT ? theme->colors.danger
-                                                                   : theme->colors.header_text;
+                                                                   : theme->colors.selection_background;
 }
 
 static void draw_outline(Canvas *canvas, Rect body, Color color)
