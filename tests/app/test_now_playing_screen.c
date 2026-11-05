@@ -171,12 +171,21 @@ static void the_codec_has_a_short_name(void)
 
 static void lossless_streams_show_bit_depth_and_rate(void)
 {
-    CHECK(stream_text_is(HI_RES_FLAC, "24-bit \xC2\xB7 96 kHz"));
+    CHECK(stream_text_is(HI_RES_FLAC, "24/96"));
 }
 
 static void lossy_streams_show_only_the_rate(void)
 {
-    CHECK(stream_text_is(MP3, "44.1 kHz"));
+    CHECK(stream_text_is(MP3, "44.1"));
+}
+
+static void the_quality_text_leads_with_the_codec(void)
+{
+    char buffer[24];
+    now_playing_quality_text(HI_RES_FLAC, buffer, sizeof buffer);
+    CHECK(strcmp(buffer, "FLAC 24/96") == 0);
+    now_playing_quality_text(MP3, buffer, sizeof buffer);
+    CHECK(strcmp(buffer, "MP3 44.1") == 0);
 }
 
 static void an_unknown_stream_shows_nothing(void)
@@ -203,6 +212,7 @@ int main(void)
         TEST_CASE(the_codec_has_a_short_name),
         TEST_CASE(lossless_streams_show_bit_depth_and_rate),
         TEST_CASE(lossy_streams_show_only_the_rate),
+        TEST_CASE(the_quality_text_leads_with_the_codec),
         TEST_CASE(an_unknown_stream_shows_nothing),
         TEST_CASE(the_detail_line_shows_bitrate_and_place),
         TEST_CASE(the_detail_line_leaves_out_what_is_unknown),

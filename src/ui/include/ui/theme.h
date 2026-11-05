@@ -43,6 +43,7 @@ typedef struct ThemeMetrics {
     int detail_gap;
     int status_icon_size;
     int status_height;
+    int status_left_inset;
 } ThemeMetrics;
 
 typedef struct Theme {

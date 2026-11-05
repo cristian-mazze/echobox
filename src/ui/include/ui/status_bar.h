@@ -21,7 +21,8 @@ typedef enum StatusBluetooth {
 
 enum {
     STATUS_BAR_LOW_BATTERY_PERCENT = 15,
-    STATUS_BAR_PERCENT_CAPACITY = 8
+    STATUS_BAR_PERCENT_CAPACITY = 8,
+    STATUS_BAR_QUALITY_CAPACITY = 24
 };
 
 typedef struct StatusBarState {
@@ -30,6 +31,7 @@ typedef struct StatusBarState {
     bool battery_known;
     uint8_t battery_percent;
     bool charging;
+    char quality[STATUS_BAR_QUALITY_CAPACITY];
 } StatusBarState;
 
 Rect status_bar_playback_area(const Theme *theme);

@@ -298,13 +298,26 @@ static bool track_label(const Library *library, BrowseQuery query, LibraryTrack 
     return true;
 }
 
+static void track_detail(const Library *library, BrowseQuery query, LibraryTrack track,
+                         BrowseText text)
+{
+    LibraryGroup artist;
+    bool has_artist = query.kind == BROWSE_PLAYLIST_TRACKS &&
+                      library_read_group(library, LIBRARY_ARTISTS, track.artist, &artist);
+    if (has_artist) {
+        library_read_string(library, artist.name, text.detail, text.detail_capacity);
+        return;
+    }
+    format_duration(track.duration_ms, text.detail, text.detail_capacity);
+}
+
 static bool track_text(const Library *library, BrowseQuery query, BrowseItem item, BrowseText text)
 {
     LibraryTrack track;
     if (!library_read_track(library, item.index, &track)) {
         return false;
     }
-    format_duration(track.duration_ms, text.detail, text.detail_capacity);
+    track_detail(library, query, track, text);
     return track_label(library, query, track, text);
 }
 

@@ -4,8 +4,7 @@
 #include "fonts/fonts.h"
 
 static const Font *const ALL_FONTS[] = {
-    &FONT_TERMINUS_REGULAR_12,
-    &FONT_TERMINUS_REGULAR_16,
+    &FONT_TERMINUS_BOLD_12,
     &FONT_TERMINUS_BOLD_16,
 };
 

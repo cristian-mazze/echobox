@@ -200,7 +200,7 @@ The panel keeps its own image memory, so we never hold a full framebuffer. The s
   |---|---|---|
   | Types | `PascalCase` | `KeyTracker`, `FrameStats` |
   | Functions and variables | `snake_case`; public functions prefixed with the module | `key_tracker_update` |
-  | Constants and enum values | `UPPER_SNAKE_CASE`, prefixed | `KEY_GESTURE_PRESS`, `FONT_TERMINUS_REGULAR_16` |
+  | Constants and enum values | `UPPER_SNAKE_CASE`, prefixed | `KEY_GESTURE_PRESS`, `FONT_TERMINUS_BOLD_16` |
   | Files | `snake_case`, named after the module | `key_tracker.c` |
 
 - Functions:

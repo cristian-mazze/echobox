@@ -12,6 +12,7 @@
 #include "core/low_battery.h"
 #include "core/power_policy.h"
 #include "core/string_builder.h"
+#include "screens/now_playing_screen.h"
 #include "cover_cache.h"
 #include "default_theme.h"
 #include "draw_profile.h"
@@ -536,7 +537,8 @@ static void draw_slide(Canvas *canvas, Screen *arriving)
 {
     const Theme *theme = current_theme();
     Screen *leaving = app.leaving;
-    bool whole = arriving->full_screen || leaving->full_screen;
+    bool whole = arriving->full_screen || leaving->full_screen || arriving->bare_header ||
+                 leaving->bare_header;
     Rect area = whole ? whole_screen() : theme_content_area(theme);
     int width = theme->metrics.screen_width;
     draw_shifted(leaving, canvas, slide_leaving_x(&app.slide, app.now_ms, width), area);
@@ -560,7 +562,9 @@ static void draw_frame(void *context, Canvas *canvas)
         screen->draw(screen->context, canvas);
     }
     if (!screen->full_screen) {
-        status_bar_draw(canvas, current_theme(), state->status_bar);
+        Theme theme = *current_theme();
+        theme.metrics.status_left_inset = screen->status_inset;
+        status_bar_draw(canvas, &theme, state->status_bar);
     }
     toast_draw(&state->toast, canvas, current_theme());
     if (state->options.show_frame_time) {
@@ -619,13 +623,18 @@ static StatusBluetooth bluetooth_of(const BluetoothLink *link)
 static StatusBarState current_status_bar(void)
 {
     HalBattery battery = hal_power_battery();
-    return (StatusBarState){
-        .playback = playback_of(player_status(&app.player).state),
+    PlayerStatus status = player_status(&app.player);
+    StatusBarState state = {
+        .playback = playback_of(status.state),
         .bluetooth = bluetooth_of(&app.bluetooth),
         .battery_known = battery.known,
         .battery_percent = battery.percent,
         .charging = battery.charging,
     };
+    if (top_screen()->bare_header && status.has_track) {
+        now_playing_quality_text(status.format, state.quality, sizeof state.quality);
+    }
+    return state;
 }
 
 static void render(FrameDrawer drawer, bool drawer_paints_everything)

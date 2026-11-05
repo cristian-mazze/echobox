@@ -30,7 +30,8 @@ static int nub_width(int size)
 Rect status_bar_playback_area(const Theme *theme)
 {
     int size = theme->metrics.status_icon_size;
-    return (Rect){theme->metrics.padding, icon_top(theme), size, size};
+    return (Rect){theme->metrics.padding + theme->metrics.status_left_inset, icon_top(theme), size,
+                  size};
 }
 
 Rect status_bar_bluetooth_area(const Theme *theme)
@@ -129,6 +130,44 @@ static void draw_battery(Canvas *canvas, const Theme *theme, StatusBarState stat
     canvas_fill_rect(canvas, inner, fill_color(theme, state));
 }
 
+static int band_height(const Theme *theme)
+{
+    return theme->metrics.status_height > 0 ? theme->metrics.status_height
+                                            : theme->metrics.header_height;
+}
+
+static Rect quality_span(const Theme *theme, StatusBarState state)
+{
+    Rect left = state.bluetooth != STATUS_BLUETOOTH_OFF
+                    ? status_bar_bluetooth_area(theme)
+                    : status_bar_playback_area(theme);
+    char text[STATUS_BAR_PERCENT_CAPACITY];
+    status_bar_percent_text(state.battery_percent, text, sizeof text);
+    int right = state.battery_known ? status_bar_percent_area(theme, text, state.charging).x
+                                    : status_bar_battery_area(theme).x;
+    int start = left.x + left.width + theme->metrics.padding;
+    int end = right - theme->metrics.padding;
+    return (Rect){start, 0, end - start, band_height(theme)};
+}
+
+static void draw_quality(Canvas *canvas, const Theme *theme, StatusBarState state)
+{
+    Rect span = quality_span(theme, state);
+    TextStyle style = {.font = theme->fonts.small, .color = theme->colors.text_secondary};
+    char codec[STATUS_BAR_QUALITY_CAPACITY];
+    size_t length = 0;
+    while (state.quality[length] != '\0' && state.quality[length] != ' ') {
+        codec[length] = state.quality[length];
+        length++;
+    }
+    codec[length] = '\0';
+    const char *text = text_width(style.font, state.quality) <= span.width ? state.quality : codec;
+    if (text[0] != '\0' && text_width(style.font, text) <= span.width) {
+        label_draw(canvas, style,
+                   (Label){.area = label_centered_area(style.font, span, text), .text = text});
+    }
+}
+
 void status_bar_draw(Canvas *canvas, const Theme *theme, StatusBarState state)
 {
     Rect icon = status_bar_playback_area(theme);
@@ -150,4 +189,5 @@ void status_bar_draw(Canvas *canvas, const Theme *theme, StatusBarState state)
         }
         draw_percent(canvas, theme, state.battery_percent, state.charging);
     }
+    draw_quality(canvas, theme, state);
 }

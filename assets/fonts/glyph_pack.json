@@ -13,15 +13,9 @@
       "character_sets": ["hangul", "hanzi", "kanji", "kana", "cjk_punctuation", "fullwidth"]
     },
     {
-      "name": "terminus_regular_12_latin1",
-      "file": "terminus/Terminus-Regular.ttf",
+      "name": "terminus_bold_12_latin1",
+      "file": "terminus/Terminus-Bold.ttf",
       "size": 12,
-      "ranges": [[160, 383], [416, 417], [431, 432], [536, 539], [880, 1023], [1024, 1279], [7840, 7929]]
-    },
-    {
-      "name": "terminus_regular_16_latin1",
-      "file": "terminus/Terminus-Regular.ttf",
-      "size": 16,
       "ranges": [[160, 383], [416, 417], [431, 432], [536, 539], [880, 1023], [1024, 1279], [7840, 7929]]
     },
     {

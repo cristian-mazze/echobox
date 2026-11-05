@@ -1561,7 +1561,9 @@ static void the_header_shows_the_play_state_and_battery(void)
     CHECK(!area_has_color(status_bar_playback_area(&DEFAULT_THEME), icon));
     CHECK(area_has_color(status_bar_battery_area(&DEFAULT_THEME), icon));
     play_first_album_track();
-    CHECK(area_has_color(status_bar_playback_area(&DEFAULT_THEME), icon));
+    Theme beside_cover = DEFAULT_THEME;
+    beside_cover.metrics.status_left_inset = DEFAULT_THEME.metrics.screen_height;
+    CHECK(area_has_color(status_bar_playback_area(&beside_cover), icon));
 }
 
 static void stopping_the_app_saves_the_session(void)

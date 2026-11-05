@@ -6,8 +6,7 @@
 #include "sim_glyphs.h"
 
 static const Font *const ALL_FONTS[] = {
-    &FONT_TERMINUS_REGULAR_12,
-    &FONT_TERMINUS_REGULAR_16,
+    &FONT_TERMINUS_BOLD_12,
     &FONT_TERMINUS_BOLD_16,
 };
 
@@ -33,14 +32,11 @@ static void every_accented_letter_comes_from_a_pack(void)
 
 static void each_font_has_its_own_accents(void)
 {
-    const Glyph *regular = font_find_glyph(&FONT_TERMINUS_REGULAR_16, 0xE9);
-    int regular_advance = regular != NULL ? regular->advance : -1;
-    int regular_width = regular != NULL ? regular->width : -1;
-    const Glyph *small = font_find_glyph(&FONT_TERMINUS_REGULAR_12, 0xE9);
-    CHECK(small != NULL && small->width < regular_width);
-    const Glyph *bold = font_find_glyph(&FONT_TERMINUS_BOLD_16, 0xE9);
-    CHECK(bold != NULL && bold->codepoint == 0xE9);
-    CHECK(regular_advance > 0);
+    const Glyph *large = font_find_glyph(&FONT_TERMINUS_BOLD_16, 0xE9);
+    int large_width = large != NULL ? large->width : -1;
+    const Glyph *small = font_find_glyph(&FONT_TERMINUS_BOLD_12, 0xE9);
+    CHECK(small != NULL && small->width < large_width);
+    CHECK(large != NULL && large->codepoint == 0xE9 && large->advance > 0);
 }
 
 static void the_no_break_space_is_blank(void)

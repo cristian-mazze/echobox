@@ -27,8 +27,8 @@ const Theme DEFAULT_THEME = {
     .fonts =
         {
             .title = &FONT_TERMINUS_BOLD_16,
-            .body = &FONT_TERMINUS_REGULAR_16,
-            .small = &FONT_TERMINUS_REGULAR_12,
+            .body = &FONT_TERMINUS_BOLD_16,
+            .small = &FONT_TERMINUS_BOLD_12,
         },
     .metrics =
         {
