@@ -2,6 +2,7 @@
 
 #include "fonts/fonts.h"
 #include "hal/display.h"
+#include "settings/settings.h"
 
 const Theme DEFAULT_THEME = {
     .colors =
@@ -46,6 +47,11 @@ const Theme DEFAULT_THEME = {
     .marquee = {.pause_ms = 1200, .speed_px_per_s = 40, .gap_px = 32},
 };
 
+static const Color ACCENTS[ACCENT_COUNT] = {COLOR_RGB(242, 122, 24), COLOR_RGB(248, 184, 0),
+                                            COLOR_RGB(136, 216, 40), COLOR_RGB(0, 200, 216),
+                                            COLOR_RGB(88, 160, 248), COLOR_RGB(176, 128, 248),
+                                            COLOR_RGB(248, 96, 168), COLOR_RGB(240, 72, 72)};
+
 enum {
     PORTRAIT_STATUS_HEIGHT = 16,
     PORTRAIT_TITLE_HEIGHT = 24
@@ -62,4 +68,14 @@ Theme default_theme_for(bool portrait)
         theme.metrics.header_inset = theme.metrics.padding;
     }
     return theme;
+}
+
+void default_theme_set_accent(Theme *theme, uint8_t accent)
+{
+    Color color = ACCENTS[accent < ACCENT_COUNT ? accent : 0];
+    theme->colors.selection_background = color;
+    theme->colors.selection_top = color;
+    theme->colors.selection_shine = color;
+    theme->colors.success = color;
+    theme->colors.chevron = color;
 }

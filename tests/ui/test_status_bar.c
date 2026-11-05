@@ -33,6 +33,7 @@ static StatusBarState battery_at(uint8_t percent, bool charging)
 {
     return (StatusBarState){.playback = STATUS_PLAYBACK_NONE,
                             .battery_known = true,
+                            .show_percent = true,
                             .battery_percent = percent,
                             .charging = charging};
 }
@@ -132,6 +133,16 @@ static void a_known_battery_shows_its_percentage(void)
     CHECK(!ui_test_area_has_only(&canvas, percent, theme.colors.header_background));
 }
 
+static void a_hidden_percentage_leaves_its_spot_empty(void)
+{
+    Theme theme = status_theme();
+    StatusBarState state = battery_at(HALF_BATTERY, false);
+    state.show_percent = false;
+    Canvas canvas = draw_status(&theme, state);
+    Rect percent = status_bar_percent_area(&theme, "50%", false);
+    CHECK(ui_test_area_has_only(&canvas, percent, theme.colors.header_background));
+}
+
 static void an_unknown_battery_shows_no_percentage(void)
 {
     Theme theme = status_theme();
@@ -170,6 +181,7 @@ int main(void)
         TEST_CASE(the_percentage_reads_as_a_number_and_a_percent_sign),
         TEST_CASE(the_percentage_sits_just_left_of_the_battery),
         TEST_CASE(a_known_battery_shows_its_percentage),
+        TEST_CASE(a_hidden_percentage_leaves_its_spot_empty),
         TEST_CASE(an_unknown_battery_shows_no_percentage),
         TEST_CASE(an_idle_player_without_a_battery_reading_draws_nothing),
         TEST_CASE(a_playing_player_shows_the_play_icon_at_the_left),

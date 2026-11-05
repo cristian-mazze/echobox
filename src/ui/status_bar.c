@@ -100,8 +100,9 @@ static Color fill_color(const Theme *theme, StatusBarState state)
     if (state.charging) {
         return theme->colors.success;
     }
-    return state.battery_percent <= STATUS_BAR_LOW_BATTERY_PERCENT ? theme->colors.danger
-                                                                   : theme->colors.selection_background;
+    return state.battery_percent <= STATUS_BAR_LOW_BATTERY_PERCENT
+               ? theme->colors.danger
+               : theme->colors.selection_background;
 }
 
 static void draw_outline(Canvas *canvas, Rect body, Color color)
@@ -138,13 +139,14 @@ static int band_height(const Theme *theme)
 
 static Rect quality_span(const Theme *theme, StatusBarState state)
 {
-    Rect left = state.bluetooth != STATUS_BLUETOOTH_OFF
-                    ? status_bar_bluetooth_area(theme)
-                    : status_bar_playback_area(theme);
+    Rect left = state.bluetooth != STATUS_BLUETOOTH_OFF ? status_bar_bluetooth_area(theme)
+                                                        : status_bar_playback_area(theme);
     char text[STATUS_BAR_PERCENT_CAPACITY];
     status_bar_percent_text(state.battery_percent, text, sizeof text);
-    int right = state.battery_known ? status_bar_percent_area(theme, text, state.charging).x
-                                    : status_bar_battery_area(theme).x;
+    int right = state.show_percent && state.battery_known
+                    ? status_bar_percent_area(theme, text, state.charging).x
+                : state.charging ? status_bar_bolt_area(theme).x
+                                 : status_bar_battery_area(theme).x;
     int start = left.x + left.width + theme->metrics.padding;
     int end = right - theme->metrics.padding;
     return (Rect){start, 0, end - start, band_height(theme)};
@@ -187,7 +189,9 @@ void status_bar_draw(Canvas *canvas, const Theme *theme, StatusBarState state)
         if (state.charging) {
             icon_draw_bolt(canvas, status_bar_bolt_area(theme), theme->colors.success);
         }
-        draw_percent(canvas, theme, state.battery_percent, state.charging);
+        if (state.show_percent) {
+            draw_percent(canvas, theme, state.battery_percent, state.charging);
+        }
     }
     draw_quality(canvas, theme, state);
 }

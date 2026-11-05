@@ -31,6 +31,7 @@ typedef struct StatusBarState {
     bool battery_known;
     uint8_t battery_percent;
     bool charging;
+    bool show_percent;
     char quality[STATUS_BAR_QUALITY_CAPACITY];
 } StatusBarState;
 

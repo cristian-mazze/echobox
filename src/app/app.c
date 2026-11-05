@@ -12,7 +12,6 @@
 #include "core/low_battery.h"
 #include "core/power_policy.h"
 #include "core/string_builder.h"
-#include "screens/now_playing_screen.h"
 #include "cover_cache.h"
 #include "default_theme.h"
 #include "draw_profile.h"
@@ -33,6 +32,7 @@
 #include "music_check.h"
 #include "player.h"
 #include "screens/charge_screen.h"
+#include "screens/now_playing_screen.h"
 #include "settings/rocker.h"
 #include "settings_store.h"
 #include "ui/fade.h"
@@ -84,6 +84,7 @@ typedef struct AppState {
     bool rocker_swapped[KEY_COUNT];
     Theme theme;
     Orientation shown_orientation;
+    uint8_t shown_accent;
     FrameStats frame_stats;
     FrameStats update_stats;
     FrameStats draw_stats;
@@ -176,8 +177,18 @@ static void apply_orientation(void)
     Orientation orientation = app.settings.settings.orientation;
     app.shown_orientation = orientation;
     app.theme = default_theme_for(orientation != ORIENTATION_LANDSCAPE);
+    app.shown_accent = app.settings.settings.accent;
+    default_theme_set_accent(&app.theme, app.shown_accent);
     hal_display_set_rotation(rotation_for(orientation));
     frame_diff_init(&app.frame_diff, row_hashes, app.theme.metrics.screen_height);
+}
+
+static void follow_accent(void)
+{
+    if (app.settings.settings.accent != app.shown_accent) {
+        app.shown_accent = app.settings.settings.accent;
+        default_theme_set_accent(&app.theme, app.shown_accent);
+    }
 }
 
 static void follow_orientation(void)
@@ -185,6 +196,7 @@ static void follow_orientation(void)
     if (app.settings.settings.orientation != app.shown_orientation) {
         apply_orientation();
     }
+    follow_accent();
 }
 
 static Key oriented_key(HalKeyTransition transition)
@@ -630,6 +642,7 @@ static StatusBarState current_status_bar(void)
         .battery_known = battery.known,
         .battery_percent = battery.percent,
         .charging = battery.charging,
+        .show_percent = app.settings.settings.show_battery_percent,
     };
     if (top_screen()->bare_header && status.has_track) {
         now_playing_quality_text(status.format, state.quality, sizeof state.quality);
