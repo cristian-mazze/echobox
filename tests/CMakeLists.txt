@@ -331,9 +331,12 @@ if(ECHO_BUILD_SIM)
     add_executable(cover_build_tool library/cover_build_tool.c)
     target_link_libraries(cover_build_tool PRIVATE echo_library_scan echo_sim_storage
         echo_options)
-    if(EXISTS ${PROJECT_SOURCE_DIR}/.venv/bin/python)
+    include(${PROJECT_SOURCE_DIR}/cmake/venv_python.cmake)
+    find_venv_python()
+
+    if(ECHO_VENV_PYTHON)
         add_test(NAME cover_build_matches_reference
-            COMMAND ${PROJECT_SOURCE_DIR}/.venv/bin/python
+            COMMAND "${ECHO_VENV_PYTHON}"
                 ${PROJECT_SOURCE_DIR}/tools/check_cover_build.py
                 --tool $<TARGET_FILE:cover_build_tool>
                 --fixtures ${CMAKE_CURRENT_SOURCE_DIR}/fixtures
@@ -370,12 +373,9 @@ add_test(NAME no_comments
 
 find_program(CLANG_FORMAT clang-format)
 if(CLANG_FORMAT)
-    file(GLOB_RECURSE FORMATTED_SOURCES CONFIGURE_DEPENDS
-        ${PROJECT_SOURCE_DIR}/src/*.c ${PROJECT_SOURCE_DIR}/src/*.h
-        ${PROJECT_SOURCE_DIR}/platform/*.c ${PROJECT_SOURCE_DIR}/platform/*.h
-        ${PROJECT_SOURCE_DIR}/tests/*.c ${PROJECT_SOURCE_DIR}/tests/*.h
-    )
-    add_test(NAME format COMMAND ${CLANG_FORMAT} --dry-run --Werror ${FORMATTED_SOURCES})
+    string(REPLACE ";" "\n" FORMATTED_SOURCES_LIST "${FORMATTED_SOURCES}")
+    file(WRITE ${CMAKE_BINARY_DIR}/formatted_sources.txt "${FORMATTED_SOURCES_LIST}")
+    add_test(NAME format COMMAND ${CLANG_FORMAT} --dry-run --Werror -style=file:${PROJECT_SOURCE_DIR}/.clang-format @${CMAKE_BINARY_DIR}/formatted_sources.txt)
 else()
     message(STATUS "clang-format not found: the format test is skipped")
 endif()
@@ -405,45 +405,47 @@ else()
     message(STATUS "arm-none-eabi-gcc not found: the target_audit test is skipped")
 endif()
 
-set(ECHO_TOOLS_PYTHON ${PROJECT_SOURCE_DIR}/.venv/bin/python)
-if(EXISTS ${ECHO_TOOLS_PYTHON})
+include(${PROJECT_SOURCE_DIR}/cmake/venv_python.cmake)
+find_venv_python()
+
+if(ECHO_VENV_PYTHON)
     add_test(NAME tools_unit_tests
-        COMMAND ${ECHO_TOOLS_PYTHON} -m unittest discover -s ${PROJECT_SOURCE_DIR}/tools/tests
+        COMMAND "${ECHO_VENV_PYTHON}" -m unittest discover -s ${PROJECT_SOURCE_DIR}/tools/tests
     )
     add_test(NAME cover_decode_matches_pillow
-        COMMAND ${ECHO_TOOLS_PYTHON} ${PROJECT_SOURCE_DIR}/tools/check_cover_decode.py
+        COMMAND ${ECHO_VENV_PYTHON} ${PROJECT_SOURCE_DIR}/tools/check_cover_decode.py
             --tool $<TARGET_FILE:cover_decode_tool>
             --work ${CMAKE_CURRENT_BINARY_DIR}/cover_decode
     )
     set_tests_properties(cover_decode_matches_pillow PROPERTIES TIMEOUT 1200)
     add_test(NAME fonts_up_to_date
-        COMMAND ${ECHO_TOOLS_PYTHON} ${PROJECT_SOURCE_DIR}/tools/font_build.py
+        COMMAND ${ECHO_VENV_PYTHON} ${PROJECT_SOURCE_DIR}/tools/font_build.py
             --config ${PROJECT_SOURCE_DIR}/assets/fonts/fonts.json
             --output ${PROJECT_SOURCE_DIR}/src/fonts
             --style ${PROJECT_SOURCE_DIR}/.clang-format
             --check
     )
     add_test(NAME glyph_packs_up_to_date
-        COMMAND ${ECHO_TOOLS_PYTHON} ${PROJECT_SOURCE_DIR}/tools/glyph_pack.py
+        COMMAND ${ECHO_VENV_PYTHON} ${PROJECT_SOURCE_DIR}/tools/glyph_pack.py
             --config ${PROJECT_SOURCE_DIR}/assets/fonts/glyph_pack.json
             --output ${PROJECT_SOURCE_DIR}/src/fonts/packs
             --check
     )
     add_test(NAME language_packs_up_to_date
-        COMMAND ${ECHO_TOOLS_PYTHON} ${PROJECT_SOURCE_DIR}/tools/lang_pack.py
+        COMMAND ${ECHO_VENV_PYTHON} ${PROJECT_SOURCE_DIR}/tools/lang_pack.py
             --catalogue ${PROJECT_SOURCE_DIR}/src/core/include/core
             --languages ${PROJECT_SOURCE_DIR}/assets/lang
             --output ${PROJECT_SOURCE_DIR}/src/lang/packs
             --check
     )
     add_test(NAME cover_fixture_up_to_date
-        COMMAND ${ECHO_TOOLS_PYTHON} ${PROJECT_SOURCE_DIR}/tools/cover_fixture.py
+        COMMAND ${ECHO_VENV_PYTHON} ${PROJECT_SOURCE_DIR}/tools/cover_fixture.py
             --output ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/small_covers.bin
             --check
     )
     add_test(NAME tags_library_up_to_date
         COMMAND ${CMAKE_COMMAND}
-            -DPYTHON=${ECHO_TOOLS_PYTHON}
+            -DPYTHON=${ECHO_VENV_PYTHON}
             -DINDEXER=${PROJECT_SOURCE_DIR}/tools/library_index.py
             -DMUSIC=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/tags
             -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/tags_library.db
@@ -452,7 +454,7 @@ if(EXISTS ${ECHO_TOOLS_PYTHON})
     )
     add_test(NAME scan_music_up_to_date
         COMMAND ${CMAKE_COMMAND}
-            -DPYTHON=${ECHO_TOOLS_PYTHON}
+            -DPYTHON=${ECHO_VENV_PYTHON}
             -DINDEXER=${PROJECT_SOURCE_DIR}/tools/library_index.py
             -DMUSIC=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/scan_music
             -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/scan_music.db
@@ -460,18 +462,18 @@ if(EXISTS ${ECHO_TOOLS_PYTHON})
             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_library_index.cmake
     )
     add_test(NAME builder_fixture_up_to_date
-        COMMAND ${ECHO_TOOLS_PYTHON} ${PROJECT_SOURCE_DIR}/tools/builder_fixture.py
+        COMMAND ${ECHO_VENV_PYTHON} ${PROJECT_SOURCE_DIR}/tools/builder_fixture.py
             --output ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/builder_random
             --check
     )
     add_test(NAME sort_fold_up_to_date
-        COMMAND ${ECHO_TOOLS_PYTHON} ${PROJECT_SOURCE_DIR}/tools/fold_table.py
+        COMMAND ${ECHO_VENV_PYTHON} ${PROJECT_SOURCE_DIR}/tools/fold_table.py
             --output ${PROJECT_SOURCE_DIR}/src/library
             --style ${PROJECT_SOURCE_DIR}/.clang-format
             --check
     )
     add_test(NAME library_fixture_up_to_date
-        COMMAND ${ECHO_TOOLS_PYTHON} ${PROJECT_SOURCE_DIR}/tools/library_fixture.py
+        COMMAND ${ECHO_VENV_PYTHON} ${PROJECT_SOURCE_DIR}/tools/library_fixture.py
             --output ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/small_library.db
             --tracks-only-output ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/small_library_tracks.db
             --check

@@ -1,4 +1,5 @@
 import argparse
+import shutil
 import subprocess
 import sys
 import unicodedata
@@ -163,7 +164,10 @@ def render(style):
 
 
 def formatted(text, style):
-    result = subprocess.run(["clang-format", f"--style=file:{style}", "--assume-filename=x.c"],
+    formatter = shutil.which("clang-format")
+    if not formatter:
+        return text
+    result = subprocess.run([formatter, f"--style=file:{style}", "--assume-filename=x.c"],
                             input=text, capture_output=True, text=True, check=True)
     return result.stdout
 

@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sim"
+version = "0.1.0"
+description = "EchoPod simulator CLI"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+sim = "sim:main"
+
+[tool.setuptools.packages.find]
+where = ["tools"]
+include = ["sim*"]

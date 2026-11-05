@@ -5,8 +5,10 @@
       "name": "dev",
       "displayName": "Development (Debug, sanitizers)",
       "binaryDir": "${sourceDir}/build/dev",
+      "generator": "Ninja",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "clang",
         "ECHO_SANITIZE": "ON"
       }
     },
