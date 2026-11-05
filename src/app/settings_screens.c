@@ -265,10 +265,8 @@ static int current_language(const void *context)
 
 static void choose_language(void *context, int index)
 {
-    SettingsContext *settings = context;
     editable_settings(context)->language = (Language)index;
     save(context);
-    toast_show(settings->toast, i18n_text(STR_LANGUAGE_RESTART), hal_clock_milliseconds());
 }
 
 static int current_accent(const void *context)

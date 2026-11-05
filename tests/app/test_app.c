@@ -664,7 +664,8 @@ static void the_chosen_language_is_loaded_when_the_app_starts_again(void)
     CHECK(title_is("Language"));
     move_down((int)LANGUAGE_GERMAN);
     tap(KEY_PLAY);
-    CHECK(toast_is("Restart to apply"));
+    step();
+    CHECK_EQUAL(LANGUAGE_GERMAN, fake_hal_language_requested());
     restart_app();
     CHECK_EQUAL(LANGUAGE_GERMAN, fake_hal_language_requested());
 }

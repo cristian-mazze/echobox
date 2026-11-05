@@ -85,6 +85,7 @@ typedef struct AppState {
     Theme theme;
     Orientation shown_orientation;
     uint8_t shown_accent;
+    Language shown_language;
     FrameStats frame_stats;
     FrameStats update_stats;
     FrameStats draw_stats;
@@ -773,6 +774,14 @@ static void apply_language(Language language)
     }
 }
 
+static void follow_language(void)
+{
+    if (app.settings.settings.language != app.shown_language) {
+        app.shown_language = app.settings.settings.language;
+        apply_language(app.shown_language);
+    }
+}
+
 void app_start(void)
 {
     uint32_t now_ms = hal_clock_milliseconds();
@@ -797,7 +806,8 @@ void app_start(void)
     app.now_ms = now_ms;
     CardFilesReport files = card_files_prepare(show_card_setup);
     settings_store_load(&app.settings);
-    apply_language(app.settings.settings.language);
+    app.shown_language = app.settings.settings.language;
+    apply_language(app.shown_language);
     apply_orientation();
     equalizer_store_load(&app.equalizer);
     start_playback();
@@ -986,6 +996,7 @@ void app_step(void)
         dispatch_key_events(now_ms);
     }
     follow_orientation();
+    follow_language();
     if (app.saying_goodbye && fade_finished(&app.goodbye, now_ms)) {
         finish_shut_down();
     }
