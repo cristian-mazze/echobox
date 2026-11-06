@@ -144,9 +144,17 @@ Settings → Orientation has Landscape, Portrait and Portrait, flipped. The scre
 
 In portrait, Home shows the album art under the menu, Now Playing puts the cover above the track, Cover Flow scrolls albums from top to bottom, and the Custom EQ shows its bands as rows. The volume rocker turns with the screen, so the button on top moves up through lists. In Portrait (not flipped) that same button also turns the volume down.
 
+## Look
+
+Settings → Accent color sets the highlight color of the interface: Orange (the default), Amber, Lime, Cyan, Blue, Purple, Pink or Red. It changes as soon as you pick.
+
+Settings → Battery percent turns the number next to the battery icon in the top bar on or off. The icon stays either way.
+
+Both are saved and kept at the next start.
+
 ## Language
 
-Settings → Language lists English, 简体中文, 日本語, 한국어, Deutsch, Français, Español, Italiano, Português, Nederlands, Svenska, Dansk, Norsk and Suomi. Pick one and the player says "Restart to apply"; hold Power to turn it off and on again, and every menu, setting and message uses that language. Song, artist and album names are never translated.
+Settings → Language lists English, 简体中文, 日本語, 한국어, Deutsch, Français, Español, Italiano, Português, Nederlands, Svenska, Dansk, Norsk and Suomi. Pick one and every menu, setting and message changes at once; you land back on the Settings menu with Language selected. Song, artist and album names are never translated.
 
 The translations were not checked by native speakers, and a few long texts may be cut short on the small screen. Folder names stay as they are: audiobooks and podcasts still go in folders named `Audiobooks` and `Podcasts`.
 
