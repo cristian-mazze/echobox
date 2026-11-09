@@ -32,6 +32,7 @@
 #include "music_check.h"
 #include "player.h"
 #include "screens/charge_screen.h"
+#include "screens/now_playing_screen.h"
 #include "settings/rocker.h"
 #include "settings_store.h"
 #include "ui/fade.h"
@@ -83,6 +84,8 @@ typedef struct AppState {
     bool rocker_swapped[KEY_COUNT];
     Theme theme;
     Orientation shown_orientation;
+    uint8_t shown_accent;
+    Language shown_language;
     FrameStats frame_stats;
     FrameStats update_stats;
     FrameStats draw_stats;
@@ -175,8 +178,18 @@ static void apply_orientation(void)
     Orientation orientation = app.settings.settings.orientation;
     app.shown_orientation = orientation;
     app.theme = default_theme_for(orientation != ORIENTATION_LANDSCAPE);
+    app.shown_accent = app.settings.settings.accent;
+    default_theme_set_accent(&app.theme, app.shown_accent);
     hal_display_set_rotation(rotation_for(orientation));
     frame_diff_init(&app.frame_diff, row_hashes, app.theme.metrics.screen_height);
+}
+
+static void follow_accent(void)
+{
+    if (app.settings.settings.accent != app.shown_accent) {
+        app.shown_accent = app.settings.settings.accent;
+        default_theme_set_accent(&app.theme, app.shown_accent);
+    }
 }
 
 static void follow_orientation(void)
@@ -184,6 +197,7 @@ static void follow_orientation(void)
     if (app.settings.settings.orientation != app.shown_orientation) {
         apply_orientation();
     }
+    follow_accent();
 }
 
 static Key oriented_key(HalKeyTransition transition)
@@ -536,7 +550,8 @@ static void draw_slide(Canvas *canvas, Screen *arriving)
 {
     const Theme *theme = current_theme();
     Screen *leaving = app.leaving;
-    bool whole = arriving->full_screen || leaving->full_screen;
+    bool whole = arriving->full_screen || leaving->full_screen || arriving->bare_header ||
+                 leaving->bare_header;
     Rect area = whole ? whole_screen() : theme_content_area(theme);
     int width = theme->metrics.screen_width;
     draw_shifted(leaving, canvas, slide_leaving_x(&app.slide, app.now_ms, width), area);
@@ -560,7 +575,9 @@ static void draw_frame(void *context, Canvas *canvas)
         screen->draw(screen->context, canvas);
     }
     if (!screen->full_screen) {
-        status_bar_draw(canvas, current_theme(), state->status_bar);
+        Theme theme = *current_theme();
+        theme.metrics.status_left_inset = screen->status_inset;
+        status_bar_draw(canvas, &theme, state->status_bar);
     }
     toast_draw(&state->toast, canvas, current_theme());
     if (state->options.show_frame_time) {
@@ -619,13 +636,19 @@ static StatusBluetooth bluetooth_of(const BluetoothLink *link)
 static StatusBarState current_status_bar(void)
 {
     HalBattery battery = hal_power_battery();
-    return (StatusBarState){
-        .playback = playback_of(player_status(&app.player).state),
+    PlayerStatus status = player_status(&app.player);
+    StatusBarState state = {
+        .playback = playback_of(status.state),
         .bluetooth = bluetooth_of(&app.bluetooth),
         .battery_known = battery.known,
         .battery_percent = battery.percent,
         .charging = battery.charging,
+        .show_percent = app.settings.settings.show_battery_percent,
     };
+    if (top_screen()->bare_header && status.has_track) {
+        now_playing_quality_text(status.format, state.quality, sizeof state.quality);
+    }
+    return state;
 }
 
 static void render(FrameDrawer drawer, bool drawer_paints_everything)
@@ -702,7 +725,7 @@ static void open_start_screen(uint32_t now_ms)
     }
 }
 
-static void start_screens(uint32_t now_ms)
+static void build_screens(uint32_t now_ms)
 {
     AppScreensContext context = {
         .options = &app.options,
@@ -721,8 +744,13 @@ static void start_screens(uint32_t now_ms)
     };
     Screen *root = app_screens_init(&app.screens, context);
     screen_stack_init(&app.stack, root, now_ms);
-    open_start_screen(now_ms);
     use_screen_key_behaviors();
+}
+
+static void start_screens(uint32_t now_ms)
+{
+    build_screens(now_ms);
+    open_start_screen(now_ms);
 }
 
 static void report_card_files(CardFilesReport files, uint32_t now_ms)
@@ -751,6 +779,17 @@ static void apply_language(Language language)
     }
 }
 
+static void follow_language(void)
+{
+    if (app.settings.settings.language != app.shown_language) {
+        app.shown_language = app.settings.settings.language;
+        apply_language(app.shown_language);
+        build_screens(app.now_ms);
+        screen_stack_apply(&app.stack, screen_action_push(app_screens_open_language(&app.screens)),
+                           app.now_ms);
+    }
+}
+
 void app_start(void)
 {
     uint32_t now_ms = hal_clock_milliseconds();
@@ -775,7 +814,8 @@ void app_start(void)
     app.now_ms = now_ms;
     CardFilesReport files = card_files_prepare(show_card_setup);
     settings_store_load(&app.settings);
-    apply_language(app.settings.settings.language);
+    app.shown_language = app.settings.settings.language;
+    apply_language(app.shown_language);
     apply_orientation();
     equalizer_store_load(&app.equalizer);
     start_playback();
@@ -964,6 +1004,7 @@ void app_step(void)
         dispatch_key_events(now_ms);
     }
     follow_orientation();
+    follow_language();
     if (app.saying_goodbye && fade_finished(&app.goodbye, now_ms)) {
         finish_shut_down();
     }

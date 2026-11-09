@@ -4,9 +4,8 @@
 #include "fonts/fonts.h"
 
 static const Font *const ALL_FONTS[] = {
-    &FONT_INTER_REGULAR_12,
-    &FONT_INTER_REGULAR_16,
-    &FONT_INTER_SEMIBOLD_16,
+    &FONT_TERMINUS_BOLD_12,
+    &FONT_TERMINUS_BOLD_16,
 };
 
 enum {

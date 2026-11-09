@@ -142,6 +142,20 @@ static void a_version_four_file_ignores_whatever_sits_in_the_orientation_byte(vo
     CHECK_EQUAL(ORIENTATION_LANDSCAPE, decoded.orientation);
 }
 
+static void the_accent_and_percent_choice_share_the_language_byte(void)
+{
+    Settings settings = custom_settings();
+    settings.accent = 5;
+    settings.show_battery_percent = false;
+    uint8_t bytes[SETTINGS_FILE_SIZE];
+    settings_encode(&settings, bytes);
+    Settings decoded;
+    CHECK(settings_decode(bytes, sizeof bytes, &decoded));
+    CHECK_EQUAL(5, decoded.accent);
+    CHECK(!decoded.show_battery_percent);
+    CHECK_EQUAL(LANGUAGE_KOREAN, decoded.language);
+}
+
 static void the_language_is_saved_at_byte_eighteen(void)
 {
     Settings settings = custom_settings();
@@ -355,6 +369,7 @@ int main(void)
         TEST_CASE(a_newer_version_is_rejected),
         TEST_CASE(the_filter_and_balance_share_byte_nineteen),
         TEST_CASE(a_version_six_file_loads_with_the_first_filter_and_centred_balance),
+        TEST_CASE(the_accent_and_percent_choice_share_the_language_byte),
         TEST_CASE(an_unknown_filter_or_balance_is_rejected),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));

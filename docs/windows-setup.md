@@ -52,6 +52,27 @@ Or use the CLI tools:
 .\sim test
 ```
 
+## Building the Device Image
+
+The `device` and `release` presets cross-compile with `arm-none-eabi-gcc` and need Ninja. Both must be on the `PATH` (here they are in `C:\msys64\clang64\bin`). The presets do not set a generator, so pass `-G Ninja`; without it CMake picks Visual Studio and fails with `invalid numeric argument '/Wextra'`.
+
+In PowerShell:
+
+```powershell
+$env:PATH = "C:\msys64\clang64\bin;$env:PATH"
+cmake --preset device -G Ninja; if ($?) { cmake --build --preset device }
+```
+
+Windows PowerShell 5.1 has no `&&`, so chain with `; if ($?) { ... }`. The `PATH` change only lasts for that PowerShell window.
+
+If `build\device` was already configured with the wrong generator, delete it first:
+
+```powershell
+Remove-Item -Recurse -Force build\device
+```
+
+The image is `build\device\HIFIEC90.IMG`. Use the `release` preset for the official firmware (`build\release\HIFIEC90.IMG`). To install it, see `docs/device-install.md`.
+
 ## Simulator Controls
 
 | Key | Action |

@@ -13,6 +13,10 @@ enum {
     DAC_VERSION = 7,
     FILTER_SHIFT = 5,
     BALANCE_MASK = 0x1F,
+    LANGUAGE_MASK = 0x0F,
+    ACCENT_SHIFT = 4,
+    ACCENT_MASK = 0x07,
+    HIDE_PERCENT_BIT = 0x80,
     MAGIC_SIZE = 4,
     VERSION_FIELD = 4,
     BRIGHTNESS_FIELD = 6,
@@ -62,6 +66,8 @@ Settings settings_defaults(void)
         .language = LANGUAGE_ENGLISH,
         .filter = 0,
         .balance = SETTINGS_BALANCE_CENTER,
+        .accent = 0,
+        .show_battery_percent = true,
     };
 }
 
@@ -111,6 +117,13 @@ static uint32_t get_u32(const uint8_t *bytes, int offset)
     return value;
 }
 
+static uint8_t language_byte(const Settings *settings)
+{
+    uint8_t hidden = settings->show_battery_percent ? 0 : HIDE_PERCENT_BIT;
+    uint8_t accent = (uint8_t)((settings->accent & ACCENT_MASK) << ACCENT_SHIFT);
+    return (uint8_t)((uint8_t)settings->language | accent | hidden);
+}
+
 void settings_encode(const Settings *settings, uint8_t *bytes)
 {
     for (int index = 0; index < SETTINGS_FILE_SIZE; index++) {
@@ -129,7 +142,7 @@ void settings_encode(const Settings *settings, uint8_t *bytes)
     bytes[USB_MODE_FIELD] = (uint8_t)settings->usb_mode;
     bytes[DAC_VOLUME_FIELD] = settings->dac_volume;
     bytes[ORIENTATION_FIELD] = (uint8_t)settings->orientation;
-    bytes[LANGUAGE_FIELD] = (uint8_t)settings->language;
+    bytes[LANGUAGE_FIELD] = language_byte(settings);
     bytes[DAC_FIELD] = (uint8_t)(settings->filter << FILTER_SHIFT | settings->balance);
     put_u32(bytes, CHECKSUM_FIELD, checksum_of(bytes));
 }
@@ -158,10 +171,18 @@ static bool values_valid(const uint8_t *bytes)
            bytes[USB_MODE_FIELD] < USB_MODE_COUNT &&
            bytes[DAC_VOLUME_FIELD] <= SETTINGS_VOLUME_MAX &&
            bytes[ORIENTATION_FIELD] < ORIENTATION_COUNT &&
-           (bytes[VERSION_FIELD] < LANGUAGE_VERSION || bytes[LANGUAGE_FIELD] < LANGUAGE_COUNT) &&
+           (bytes[VERSION_FIELD] < LANGUAGE_VERSION ||
+            (bytes[LANGUAGE_FIELD] & LANGUAGE_MASK) < LANGUAGE_COUNT) &&
            (bytes[VERSION_FIELD] < DAC_VERSION ||
             ((bytes[DAC_FIELD] >> FILTER_SHIFT) < DAC_FILTER_COUNT &&
              (bytes[DAC_FIELD] & BALANCE_MASK) < SETTINGS_BALANCE_STEPS));
+}
+
+static uint8_t accent_of(const uint8_t *bytes)
+{
+    return bytes[VERSION_FIELD] < LANGUAGE_VERSION
+               ? 0
+               : (uint8_t)(bytes[LANGUAGE_FIELD] >> ACCENT_SHIFT & ACCENT_MASK);
 }
 
 bool settings_decode(const uint8_t *bytes, uint32_t length, Settings *settings)
@@ -188,11 +209,14 @@ bool settings_decode(const uint8_t *bytes, uint32_t length, Settings *settings)
         .orientation = bytes[VERSION_FIELD] < ORIENTATION_VERSION
                            ? ORIENTATION_LANDSCAPE
                            : (Orientation)bytes[ORIENTATION_FIELD],
-        .language = bytes[VERSION_FIELD] < LANGUAGE_VERSION ? LANGUAGE_ENGLISH
-                                                            : (Language)bytes[LANGUAGE_FIELD],
+        .language = bytes[VERSION_FIELD] < LANGUAGE_VERSION
+                        ? LANGUAGE_ENGLISH
+                        : (Language)(bytes[LANGUAGE_FIELD] & LANGUAGE_MASK),
         .filter = bytes[VERSION_FIELD] < DAC_VERSION ? 0 : bytes[DAC_FIELD] >> FILTER_SHIFT,
         .balance = bytes[VERSION_FIELD] < DAC_VERSION ? SETTINGS_BALANCE_CENTER
                                                       : bytes[DAC_FIELD] & BALANCE_MASK,
+        .accent = accent_of(bytes),
+        .show_battery_percent = (bytes[LANGUAGE_FIELD] & HIDE_PERCENT_BIT) == 0,
     };
     return true;
 }

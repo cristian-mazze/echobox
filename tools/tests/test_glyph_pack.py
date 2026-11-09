@@ -43,7 +43,7 @@ class CharacterSetTest(unittest.TestCase):
                 self.assertIn(ord(character), wanted, character)
             self.assertLess(len(wanted), 13000)
 
-    def test_the_inter_faces_hold_latin_greek_cyrillic_and_vietnamese_letters(self):
+    def test_the_latin_faces_hold_latin_greek_cyrillic_and_vietnamese_letters(self):
         config = json.loads((ASSETS_DIRECTORY / "glyph_pack.json").read_text())
         for face in config["faces"][2:]:
             wanted = glyph_pack.face_characters(config, face)

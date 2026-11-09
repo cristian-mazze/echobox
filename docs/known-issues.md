@@ -40,7 +40,7 @@ EchoPod is early firmware made by one person and tested on one player. It comes 
 
 - **The translations are unreviewed.** Claude wrote them (the Chinese starts from a contributor's text) and no native speaker has checked them. Terms such as the name of the Play key, Up Next, and the equalizer presets are guesses in several languages.
 - **Long texts may not fit.** The screen is 320 × 170 px, and some notices and hint lines in Japanese, Korean, German, Italian, Portuguese and Dutch run longer than the English; they may wrap onto an extra line or be cut. Not yet checked screen by screen on the player.
-- **A language change needs a restart.** The Language row saves the choice, and the player uses it from its next start.
+- **A language change closes your open screens.** The player rebuilds every menu in the new language and returns to Settings, so any other screen you had open is closed. Playback is not affected.
 - **Some text stays English:** the Battery low notice shown before storage starts, the panic screen, the USB drive names the computer sees, the folder names `Audiobooks` and `Podcasts`, the fallback names the library builder writes (such as Unknown Artist), and the debug abbreviations in Diagnostics.
 
 ## echo-sync

@@ -27,10 +27,10 @@ typedef struct SampleLine {
 } SampleLine;
 
 static const SampleLine LINES[LINE_COUNT] = {
-    {SAMPLE_TITLE, false, "Inter SemiBold 16 · Björk"},
+    {SAMPLE_TITLE, false, "Terminus Bold 16 · Björk"},
     {SAMPLE_BODY, false, "The quick brown fox jumps over"},
     {SAMPLE_BODY, true, "Sigur Rós — Ágætis byrjun"},
-    {SAMPLE_SMALL, false, "Inter 12 · 0123456789 ÀÉÎÕÜ ñ ß … – € ™"},
+    {SAMPLE_SMALL, false, "Terminus 12 · 0123456789 ÀÉÎÕÜ ñ ß … – € ™"},
 };
 
 static const Font *font_of(const Theme *theme, SampleFont font)

@@ -125,4 +125,4 @@ See `docs/architecture.md`.
 
 ## License
 
-GPL-3.0-or-later. See `LICENSE`. The bundled Inter font is under the SIL Open Font License 1.1 (`assets/fonts/inter/OFL.txt`), and so are the Chinese, Japanese and Korean glyph packs made from Noto Sans CJK SC (`assets/fonts/noto-cjk/OFL.txt`). The simulator's decoders (dr_flac, dr_mp3, dr_wav) are public domain or MIT-0 (`third_party/dr_libs/LICENSE`). The player's MP3 decoder is libmad, GPL-2.0-or-later (`third_party/libmad/COPYING`).
+GPL-3.0-or-later. See `LICENSE`. The bundled Terminus font (`assets/fonts/terminus/COPYING`) and the Inter fallback glyphs (`assets/fonts/inter/OFL.txt`) are under the SIL Open Font License 1.1, and so are the Chinese, Japanese and Korean glyph packs made from Noto Sans CJK SC (`assets/fonts/noto-cjk/OFL.txt`). The simulator's decoders (dr_flac, dr_mp3, dr_wav) are public domain or MIT-0 (`third_party/dr_libs/LICENSE`). The player's MP3 decoder is libmad, GPL-2.0-or-later (`third_party/libmad/COPYING`).

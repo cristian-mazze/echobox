@@ -17,7 +17,7 @@ void header_draw(Canvas *canvas, const Theme *theme, const char *title)
                          title_row.height - DIVIDER_HEIGHT};
     TextStyle style = {.font = theme->fonts.title, .color = theme->colors.header_text};
     Rect body = {area.x, area.y, area.width, area.height - DIVIDER_HEIGHT};
-    canvas_fill_gradient(canvas, body, theme->colors.header_top, theme->colors.header_background);
+    canvas_fill_rect(canvas, body, theme->colors.header_background);
     canvas_fill_rect(canvas, divider, theme->colors.divider);
     Rect title_area = label_centered_area(style.font, title_bounds, title);
     label_draw(canvas, style, (Label){.area = title_area, .text = title});

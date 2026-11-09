@@ -83,11 +83,21 @@ def pack_face_numbers(assets_directory):
     return {face["name"]: number for number, face in enumerate(faces, start=1)}
 
 
+def fallback_glyphs(spec, ranges, assets_directory, present):
+    if "fallback" not in spec:
+        return []
+    path = assets_directory / spec["fallback"]
+    font = load_font(path, spec["size"])
+    return [render_glyph(font, codepoint) for codepoint in covered_codepoints(path, ranges)
+            if codepoint not in present]
+
+
 def build_font(spec, ranges, assets_directory):
     path = assets_directory / spec["file"]
     font = load_font(path, spec["size"])
     ascent, descent = font.getmetrics()
     glyphs = [render_glyph(font, codepoint) for codepoint in covered_codepoints(path, ranges)]
+    glyphs += fallback_glyphs(spec, ranges, assets_directory, {glyph.codepoint for glyph in glyphs})
     numbers = pack_face_numbers(assets_directory)
     faces = tuple(numbers[name] if name else 0 for name in spec.get("pack_faces", [None, None]))
     return FontData(spec["name"], ascent, descent, glyphs, faces)

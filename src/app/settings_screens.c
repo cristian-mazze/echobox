@@ -50,6 +50,10 @@ static const StringId LANGUAGE_OPTIONS[LANGUAGE_COUNT] = {
     STR_LANGUAGE_EN, STR_LANGUAGE_ZH, STR_LANGUAGE_JA, STR_LANGUAGE_KO, STR_LANGUAGE_DE,
     STR_LANGUAGE_FR, STR_LANGUAGE_ES, STR_LANGUAGE_IT, STR_LANGUAGE_PT, STR_LANGUAGE_NL,
     STR_LANGUAGE_SV, STR_LANGUAGE_DA, STR_LANGUAGE_NO, STR_LANGUAGE_FI};
+static const StringId ACCENT_OPTIONS[ACCENT_COUNT] = {
+    STR_ACCENT_ORANGE, STR_ACCENT_AMBER,  STR_ACCENT_LIME, STR_ACCENT_CYAN,
+    STR_ACCENT_BLUE,   STR_ACCENT_PURPLE, STR_ACCENT_PINK, STR_ACCENT_RED};
+static const StringId PERCENT_OPTIONS[2] = {STR_ON, STR_OFF};
 static const StringId USB_MODE_OPTIONS[USB_MODE_COUNT] = {STR_SETTINGS_STORAGE, STR_SETTINGS_DAC};
 static const StringId USB_MODE_MESSAGES[USB_MODE_COUNT] = {STR_SETTINGS_USB_DRIVES,
                                                            STR_SETTINGS_USB_SOUND};
@@ -261,10 +265,30 @@ static int current_language(const void *context)
 
 static void choose_language(void *context, int index)
 {
-    SettingsContext *settings = context;
     editable_settings(context)->language = (Language)index;
     save(context);
-    toast_show(settings->toast, i18n_text(STR_LANGUAGE_RESTART), hal_clock_milliseconds());
+}
+
+static int current_accent(const void *context)
+{
+    return settings_of(context)->accent;
+}
+
+static void choose_accent(void *context, int index)
+{
+    editable_settings(context)->accent = (uint8_t)index;
+    save(context);
+}
+
+static int current_percent(const void *context)
+{
+    return settings_of(context)->show_battery_percent ? 0 : 1;
+}
+
+static void choose_percent(void *context, int index)
+{
+    editable_settings(context)->show_battery_percent = index == 0;
+    save(context);
 }
 
 static const SettingChoice CHOICES[SETTINGS_CHOICE_COUNT] = {
@@ -295,6 +319,8 @@ static const SettingChoice CHOICES[SETTINGS_CHOICE_COUNT] = {
      choose_usb_mode, NULL},
     {STR_LANGUAGE_TITLE, LANGUAGE_OPTIONS, NULL, LANGUAGE_COUNT, current_language, choose_language,
      NULL},
+    {STR_SETTINGS_ACCENT, ACCENT_OPTIONS, NULL, ACCENT_COUNT, current_accent, choose_accent, NULL},
+    {STR_SETTINGS_BATTERY_PERCENT, PERCENT_OPTIONS, NULL, 2, current_percent, choose_percent, NULL},
 };
 
 static ScreenAction open_choice(void *context)
