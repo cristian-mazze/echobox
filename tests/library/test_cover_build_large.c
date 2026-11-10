@@ -5,11 +5,14 @@
 #include "check.h"
 #include "cover_png.h"
 #include "library/cover_build.h"
+#include "library/cover_state.h"
 #include "library/covers.h"
 #include "library/library_scan.h"
 
 enum {
     ALBUMS = 300,
+    SMALL_LIBRARY_ALBUMS = 80,
+    SLOW_ALBUM_MS = 1000,
     FULL_CARD_ALBUMS = 2673,
     INDEX_BLOCK_ROWS = 64,
     ADDED_ALBUMS = 8,
@@ -319,6 +322,39 @@ static ScanResult rescan(CoverStats *stats)
     return cover_build(&job, stats);
 }
 
+static uint32_t slow_clock(void *context)
+{
+    uint32_t *now = context;
+    *now += SLOW_ALBUM_MS;
+    return *now;
+}
+
+static ScanResult initial_rescan(CoverStats *stats)
+{
+    static uint8_t memory[MEMORY_SIZE];
+    static uint8_t state[COVER_STATE_BYTES];
+    uint32_t now = 0;
+    scan_library(memory);
+    card.dirs_opened = 0;
+    card.files_opened = 0;
+    cover_state_reset(state);
+    cover_state_open(state, 1);
+    CoverJob job = {.files = card_files(),
+                    .library = {buffer_read, &library_file},
+                    .library_size = LIBRARY_CAPACITY,
+                    .sink = {buffer_write, &covers_file},
+                    .previous = {buffer_read, &covers_file},
+                    .capacity = card.covers_capacity,
+                    .memory = memory,
+                    .size = sizeof memory,
+                    .scratch = {buffer_read, &scratch_file},
+                    .scratch_size = SCRATCH_SIZE};
+    CoverPlan plan = {.budget = {COVER_INITIAL_MS, COVER_INITIAL_ALBUMS},
+                      .clock = {slow_clock, &now},
+                      .state = state};
+    return cover_reconcile(&job, &plan, stats);
+}
+
 static void report_pass(const char *name, const CoverStats *stats)
 {
     printf("%s: %u albums, %u covers, %u reused, %u missing, %u decoded, %u files opened, "
@@ -380,6 +416,25 @@ static void without_the_scan_art_facts_every_album_is_opened_again(void)
     CHECK_EQUAL(ALBUMS / 2, card.dirs_opened);
 }
 
+static void the_initial_budget_decodes_100_albums_even_when_each_is_slow(void)
+{
+    CoverStats stats;
+    use_albums(ALBUMS);
+    CHECK_EQUAL(SCAN_OK, initial_rescan(&stats));
+    report_pass("initial budget", &stats);
+    CHECK_EQUAL(COVER_INITIAL_ALBUMS, stats.decoded);
+    CHECK_EQUAL(ALBUMS - COVER_INITIAL_ALBUMS, stats.pending);
+}
+
+static void a_small_library_decodes_every_album_in_the_initial_budget(void)
+{
+    CoverStats stats;
+    use_albums(SMALL_LIBRARY_ALBUMS);
+    CHECK_EQUAL(SCAN_OK, initial_rescan(&stats));
+    CHECK_EQUAL(SMALL_LIBRARY_ALBUMS, stats.decoded);
+    CHECK_EQUAL(0u, stats.pending);
+}
+
 static void committing_each_cover_of_a_full_card_is_measured(void)
 {
     CoverStats stats;
@@ -435,6 +490,8 @@ int main(void)
 {
     static const TestCase cases[] = {
         TEST_CASE(the_first_rescan_decodes_every_album),
+        TEST_CASE(the_initial_budget_decodes_100_albums_even_when_each_is_slow),
+        TEST_CASE(a_small_library_decodes_every_album_in_the_initial_budget),
         TEST_CASE(an_unchanged_rescan_decodes_nothing),
         TEST_CASE(without_the_scan_art_facts_every_album_is_opened_again),
         TEST_CASE(a_cut_while_inserting_redecodes_one_index_block_at_most),
