@@ -3,6 +3,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "art_facts.h"
+#include "cover_art_rules.h"
 #include "library/playlist_reader.h"
 #include "library/track_fields.h"
 #include "library/track_tags.h"
@@ -25,6 +27,7 @@ typedef struct Level {
     uint32_t next;
     uint32_t path_length;
     bool partial;
+    uint16_t folder;
 } Level;
 
 typedef struct ScanState {
@@ -32,6 +35,8 @@ typedef struct ScanState {
     TrackTags tags;
     TrackFields fields;
     ScanEntry entry;
+    ArtFactsWriter art;
+    CoverArtPick pick;
     Level levels[SCAN_MAX_DEPTH];
     uint32_t depth;
     char path[SCAN_PATH_CAPACITY + 2];
@@ -175,7 +180,9 @@ static ScanResult read_whole(ScanState *state, const ScanFileSystem *files, Leve
     uint32_t start = state->listing_used;
     uint32_t count = 0;
     *fits = true;
+    cover_art_pick_reset(&state->pick);
     while (*fits && files->next_entry(files->context, &state->entry)) {
+        cover_art_pick_offer(&state->pick, &state->entry);
         if (state->entry.name[0] == '.') {
             continue;
         }
@@ -278,7 +285,9 @@ static ScanResult read_batch(ScanState *state, const ScanFileSystem *files, Leve
     }
     state->listing_used = batch.start;
     ScanResult result = SCAN_OK;
+    cover_art_pick_reset(&state->pick);
     while (result == SCAN_OK && files->next_entry(files->context, &state->entry)) {
+        cover_art_pick_offer(&state->pick, &state->entry);
         if (wanted(state, &batch, state->entry.name)) {
             result = add_to_batch(state, &batch);
         }
@@ -292,7 +301,7 @@ static ScanResult read_batch(ScanState *state, const ScanFileSystem *files, Leve
     return index_listing(state, batch.start, batch.count, level);
 }
 
-static ScanResult read_listing(ScanState *state, const ScanFileSystem *files, Level *level)
+static ScanResult list_folder(ScanState *state, const ScanFileSystem *files, Level *level)
 {
     bool fits = true;
     uint32_t start = state->listing_used;
@@ -301,6 +310,15 @@ static ScanResult read_listing(ScanState *state, const ScanFileSystem *files, Le
         return result;
     }
     return read_batch(state, files, level, start, false);
+}
+
+static ScanResult read_listing(ScanState *state, const ScanFileSystem *files, Level *level)
+{
+    ScanResult result = list_folder(state, files, level);
+    if (result == SCAN_OK) {
+        level->folder = art_facts_add_folder(&state->art, &state->pick);
+    }
+    return result;
 }
 
 static ScanResult read_next_batch(ScanState *state, const ScanFileSystem *files, Level *level)
@@ -357,6 +375,20 @@ static ScanResult builder_result(BuilderResult result)
     return SCAN_WRITE_FAILED;
 }
 
+static void note_track_art(ScanState *state, uint32_t size, ScanResult added)
+{
+    if (added != SCAN_OK) {
+        return;
+    }
+    const TagPicture *picture = &state->tags.picture;
+    ArtTrackFact fact = {.size = size,
+                         .picture_offset = picture->offset,
+                         .picture_length = picture->length,
+                         .folder = state->levels[state->depth - 1].folder,
+                         .picture_kind = (uint8_t)picture->kind};
+    art_facts_add_track(&state->art, &fact);
+}
+
 static ScanResult add_file(ScanState *state, const ScanJob *job, ScanStats *stats)
 {
     ByteSource source;
@@ -373,6 +405,7 @@ static ScanResult add_file(ScanState *state, const ScanJob *job, ScanStats *stat
         track_fields_from_tags(state->path + 1, &state->tags, &state->fields);
         result = builder_result(library_builder_add_track(&state->builder, &state->fields.track));
         stats->tracks += result == SCAN_OK;
+        note_track_art(state, size, result);
     } else {
         stats->skipped++;
     }
@@ -501,7 +534,7 @@ static bool split_memory(ScanState **state, const ScanJob *job)
     (*state)->playlist_floor = listing;
     (*state)->playlist_count = 0;
     library_builder_init(&(*state)->builder, memory + header + taken, size - header - taken,
-                         job->scratch);
+                         art_facts_open(&(*state)->art, job->scratch));
     return true;
 }
 
@@ -586,6 +619,10 @@ ScanResult library_scan(const ScanJob *job, ScanStats *stats)
     if (result != SCAN_OK) {
         return result;
     }
-    return builder_result(
+    result = builder_result(
         library_builder_finish(&state->builder, job->sink, job->capacity, &stats->length));
+    if (result == SCAN_OK) {
+        art_facts_close(&state->art, library_builder_track_order(&state->builder));
+    }
+    return result;
 }

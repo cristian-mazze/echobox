@@ -79,6 +79,7 @@ static bool next_entry(void *context, ScanEntry *entry)
     }
     entry->directory = files->entry.directory;
     entry->modified = files->entry.modified;
+    entry->size = files->entry.size;
     for (size_t index = 0; index < sizeof entry->name; index++) {
         entry->name[index] = files->entry.name[index];
     }
@@ -212,6 +213,8 @@ static ScanResult build_covers(const LibraryScanEntry *entry, const ScanJob *sca
         .memory = scan->memory,
         .size = scan->size,
         .progress = {report_covers, files},
+        .scratch = {read_handle, &files->scratch},
+        .scratch_size = files->scratch.size,
     };
     ScanResult result = entry->covers(&job, stats);
     if (previous) {

@@ -27,6 +27,8 @@ typedef struct CoverJob {
     void *memory;
     uint32_t size;
     CoverProgress progress;
+    ByteSource scratch;
+    uint32_t scratch_size;
 } CoverJob;
 
 typedef struct CoverStats {

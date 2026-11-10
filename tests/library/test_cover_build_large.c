@@ -48,6 +48,7 @@ typedef struct LargeCard {
     uint32_t albums;
     uint32_t covers_capacity;
     int32_t cut_left;
+    bool without_facts;
     WriteCounts writes;
     Blob plain;
     Blob embedded;
@@ -110,11 +111,14 @@ static void name_entry(ScanEntry *entry)
 {
     entry->directory = card.open_folder == ROOT;
     entry->modified = entry->directory ? 0 : 1000;
+    entry->size = 0;
     if (entry->directory) {
         snprintf(entry->name, sizeof entry->name, "A%04u", card.cursor);
         return;
     }
     snprintf(entry->name, sizeof entry->name, "%s", card.cursor == 0 ? "01.flac" : "cover.png");
+    const Blob *flac = has_embedded_art((uint32_t)card.open_folder) ? &card.embedded : &card.plain;
+    entry->size = card.cursor == 0 ? flac->size : card.png.size;
 }
 
 static bool card_next_entry(void *context, ScanEntry *entry)
@@ -309,7 +313,9 @@ static ScanResult rescan(CoverStats *stats)
                     .previous = {buffer_read, &covers_file},
                     .capacity = card.covers_capacity,
                     .memory = memory,
-                    .size = sizeof memory};
+                    .size = sizeof memory,
+                    .scratch = {card.without_facts ? NULL : buffer_read, &scratch_file},
+                    .scratch_size = SCRATCH_SIZE};
     return cover_build(&job, stats);
 }
 
@@ -327,6 +333,7 @@ static void use_albums(uint32_t albums)
     card.albums = albums;
     card.covers_capacity = COVERS_BUFFER;
     card.cut_left = -1;
+    card.without_facts = false;
     memset(covers_file.bytes, 0, COVERS_BUFFER);
 }
 
@@ -336,6 +343,8 @@ static void the_first_rescan_decodes_every_album(void)
     use_albums(ALBUMS);
     CHECK_EQUAL(SCAN_OK, rescan(&stats));
     report_pass("first rescan", &stats);
+    CHECK_EQUAL(ALBUMS, card.files_opened);
+    CHECK_EQUAL(ALBUMS / 2, card.dirs_opened);
     CHECK_EQUAL(ALBUMS, stats.albums);
     CHECK_EQUAL(ALBUMS, stats.covers);
     CHECK_EQUAL(ALBUMS, stats.decoded);
@@ -350,10 +359,25 @@ static void an_unchanged_rescan_decodes_nothing(void)
     CHECK_EQUAL(SCAN_OK, rescan(&stats));
     CHECK_EQUAL(SCAN_OK, rescan(&stats));
     report_pass("unchanged rescan", &stats);
+    CHECK_EQUAL(0u, card.files_opened);
+    CHECK_EQUAL(0u, card.dirs_opened);
     CHECK_EQUAL(ALBUMS, stats.covers);
     CHECK_EQUAL(ALBUMS, stats.reused);
     CHECK_EQUAL(0u, stats.decoded);
     CHECK_EQUAL(0u, stats.missing);
+}
+
+static void without_the_scan_art_facts_every_album_is_opened_again(void)
+{
+    CoverStats stats;
+    use_albums(ALBUMS);
+    CHECK_EQUAL(SCAN_OK, rescan(&stats));
+    card.without_facts = true;
+    CHECK_EQUAL(SCAN_OK, rescan(&stats));
+    report_pass("rescan without art facts", &stats);
+    CHECK_EQUAL(ALBUMS, stats.reused);
+    CHECK_EQUAL(ALBUMS + ALBUMS / 2, card.files_opened);
+    CHECK_EQUAL(ALBUMS / 2, card.dirs_opened);
 }
 
 static void committing_each_cover_of_a_full_card_is_measured(void)
@@ -412,6 +436,7 @@ int main(void)
     static const TestCase cases[] = {
         TEST_CASE(the_first_rescan_decodes_every_album),
         TEST_CASE(an_unchanged_rescan_decodes_nothing),
+        TEST_CASE(without_the_scan_art_facts_every_album_is_opened_again),
         TEST_CASE(a_cut_while_inserting_redecodes_one_index_block_at_most),
         TEST_CASE(committing_each_cover_of_a_full_card_is_measured),
     };

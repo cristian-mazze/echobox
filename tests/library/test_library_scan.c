@@ -39,6 +39,8 @@ static bool next_entry(void *context, ScanEntry *entry)
         return false;
     }
     entry->directory = files->entry.directory;
+    entry->modified = files->entry.modified;
+    entry->size = files->entry.size;
     memcpy(entry->name, files->entry.name, sizeof entry->name);
     return true;
 }
@@ -289,6 +291,8 @@ static bool tree_next_entry(void *context, ScanEntry *entry)
     }
     const TreeEntry *next = &tree.listing[tree.listed - 1 - tree.cursor++];
     entry->directory = next->directory;
+    entry->modified = 0;
+    entry->size = 0;
     snprintf(entry->name, sizeof entry->name, "%s", next->name);
     return true;
 }

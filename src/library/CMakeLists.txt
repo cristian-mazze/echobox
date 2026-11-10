@@ -17,6 +17,8 @@ target_link_libraries(echo_library
 add_library(echo_library_scan STATIC
     builder_sort.c
     builder_store.c
+    art_facts.c
+    cover_art_rules.c
     cover_build.c
     cover_index.c
     library_builder.c

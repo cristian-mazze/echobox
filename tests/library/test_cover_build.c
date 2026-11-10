@@ -82,7 +82,7 @@ static bool child_of(const char *dir, const char *path, char *name, bool *direct
     return name_length > 0;
 }
 
-static void list_child(const char *name, bool directory, uint32_t modified)
+static void list_child(const char *name, bool directory, const CardFile *file)
 {
     for (uint32_t index = 0; index < card.listed; index++) {
         if (strcmp(card.listing[index].name, name) == 0) {
@@ -91,7 +91,8 @@ static void list_child(const char *name, bool directory, uint32_t modified)
     }
     ScanEntry *entry = &card.listing[card.listed++];
     entry->directory = directory;
-    entry->modified = directory ? 0 : modified;
+    entry->modified = directory ? 0 : file->modified;
+    entry->size = directory ? 0 : file->size;
     snprintf(entry->name, sizeof entry->name, "%s", name);
 }
 
@@ -104,7 +105,7 @@ static bool card_open_dir(void *context, const char *path)
         char name[PATH_CAPACITY];
         bool directory = false;
         if (child_of(path, card.files[index].path, name, &directory)) {
-            list_child(name, directory, card.files[index].modified);
+            list_child(name, directory, &card.files[index]);
         }
     }
     return card.listed > 0;
@@ -268,30 +269,49 @@ static void reset(void)
     memset(covers_file.bytes, 0, COVERS_CAPACITY);
 }
 
-static ScanResult rescan(bool keep, CoverStats *stats)
+static uint8_t pass_memory[MEMORY_SIZE];
+
+static ScanFileSystem card_files(void)
 {
-    static uint8_t memory[MEMORY_SIZE];
-    ScanFileSystem files = {card_open_dir,  card_next_entry, card_close_dir,
+    return (ScanFileSystem){card_open_dir,  card_next_entry, card_close_dir,
                             card_open_file, card_close_file, NULL};
+}
+
+static void scan_card(void)
+{
+    uint8_t *memory = pass_memory;
+    ScanFileSystem files = card_files();
     ScanStats scan_stats;
     memset(library_file.bytes, 0, LIBRARY_CAPACITY);
     ScanJob scan = {.files = files,
                     .memory = memory,
-                    .size = sizeof memory,
+                    .size = MEMORY_SIZE,
                     .scratch = {buffer_read, buffer_write, &scratch_file, SCRATCH_SIZE},
                     .sink = {buffer_write, &library_file},
                     .capacity = LIBRARY_CAPACITY};
     CHECK_EQUAL(SCAN_OK, library_scan(&scan, &scan_stats));
+}
+
+static ScanResult cover_pass(bool keep, CoverStats *stats)
+{
     covers_file.capacity = covers_capacity;
-    CoverJob job = {.files = files,
+    CoverJob job = {.files = card_files(),
                     .library = {buffer_read, &library_file},
                     .library_size = LIBRARY_CAPACITY,
                     .sink = {covers_write, &covers_file},
                     .previous = {keep ? buffer_read : NULL, &covers_file},
                     .capacity = covers_capacity,
-                    .memory = memory,
-                    .size = sizeof memory};
+                    .memory = pass_memory,
+                    .size = MEMORY_SIZE,
+                    .scratch = {buffer_read, &scratch_file},
+                    .scratch_size = SCRATCH_SIZE};
     return cover_build(&job, stats);
+}
+
+static ScanResult rescan(bool keep, CoverStats *stats)
+{
+    scan_card();
+    return cover_pass(keep, stats);
 }
 
 static uint32_t album_key(const char *title)
@@ -598,6 +618,22 @@ static void a_cut_while_rewriting_a_full_file_never_shows_another_albums_cover(v
     free(snapshot);
 }
 
+static void art_changed_between_the_passes_keeps_its_real_stamp(void)
+{
+    CoverStats stats;
+    three_albums();
+    CHECK_EQUAL(SCAN_OK, rescan(true, &stats));
+    add_album("Delta", WHITE);
+    scan_card();
+    replace_cover("Delta", RED);
+    CHECK_EQUAL(SCAN_OK, cover_pass(true, &stats));
+    CHECK_EQUAL(1u, stats.decoded);
+    CHECK_EQUAL(RED.pixel, cover_pixel("Delta"));
+    CHECK_EQUAL(SCAN_OK, rescan(true, &stats));
+    CHECK_EQUAL(0u, stats.decoded);
+    CHECK_EQUAL(4u, stats.reused);
+}
+
 int main(void)
 {
     static const TestCase cases[] = {
@@ -610,6 +646,7 @@ int main(void)
         TEST_CASE(a_file_without_stamps_is_built_again),
         TEST_CASE(a_damaged_index_is_ignored),
         TEST_CASE(without_a_previous_file_everything_is_decoded),
+        TEST_CASE(art_changed_between_the_passes_keeps_its_real_stamp),
         TEST_CASE(a_cut_anywhere_never_shows_another_albums_cover),
         TEST_CASE(a_cut_while_rewriting_a_full_file_never_shows_another_albums_cover),
     };

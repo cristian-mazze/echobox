@@ -2,7 +2,9 @@
 
 #include <stddef.h>
 
+#include "art_facts.h"
 #include "core/hash.h"
+#include "cover_art_rules.h"
 #include "cover_index.h"
 #include "image/cover_image.h"
 #include "library/covers.h"
@@ -11,18 +13,12 @@
 
 enum {
     MAX_FOLDERS = 16,
-    STEM_COUNT = 4,
-    SUFFIX_COUNT = 3,
-    MATCH_CAPACITY = 16,
     FULL_BYTES = COVER_FULL_PIXELS * 2,
     HALF_BYTES = COVER_HALF_PIXELS * 2,
     STAMP_NUMBERS = 3,
     ART_EMBEDDED = 1,
     ART_FILE = 2
 };
-
-static const char *const STEMS[STEM_COUNT] = {"cover", "folder", "front", "albumart"};
-static const char *const SUFFIXES[SUFFIX_COUNT] = {".jpg", ".jpeg", ".png"};
 
 typedef struct ArtFile {
     ByteSource source;
@@ -31,10 +27,17 @@ typedef struct ArtFile {
     uint32_t stamp;
 } ArtFile;
 
-typedef struct CoverMatch {
-    char name[MATCH_CAPACITY];
-    uint32_t modified;
-} CoverMatch;
+typedef enum ArtExpectation {
+    ART_UNKNOWN,
+    ART_ABSENT,
+    ART_EXPECTED
+} ArtExpectation;
+
+typedef struct ExpectedArt {
+    ArtExpectation kind;
+    bool embedded;
+    uint32_t stamp;
+} ExpectedArt;
 
 typedef struct CoverState {
     Library library;
@@ -43,7 +46,8 @@ typedef struct CoverState {
     LibraryAlbum album;
     uint32_t key;
     char path[SCAN_PATH_CAPACITY + 2];
-    CoverMatch matches[STEM_COUNT];
+    CoverArtPick pick;
+    ArtFacts facts;
     uint16_t full[COVER_FULL_PIXELS];
     uint16_t half[COVER_HALF_PIXELS];
     uint16_t folders[MAX_FOLDERS];
@@ -145,59 +149,6 @@ static bool open_embedded(CoverState *state, const CoverJob *job, ArtFile *art)
     return true;
 }
 
-static char lower(char character)
-{
-    return character >= 'A' && character <= 'Z' ? (char)(character - 'A' + 'a') : character;
-}
-
-static bool is_name(const char *name, const char *stem, const char *suffix)
-{
-    while (*stem != '\0') {
-        if (lower(*name++) != *stem++) {
-            return false;
-        }
-    }
-    while (*suffix != '\0') {
-        if (lower(*name++) != *suffix++) {
-            return false;
-        }
-    }
-    return *name == '\0';
-}
-
-static bool before(const char *left, const char *right)
-{
-    while (*left != '\0' && *left == *right) {
-        left++;
-        right++;
-    }
-    return (uint8_t)*left < (uint8_t)*right;
-}
-
-static void copy_name(char *target, const char *name)
-{
-    uint32_t index = 0;
-    while (name[index] != '\0' && index + 1 < MATCH_CAPACITY) {
-        target[index] = name[index];
-        index++;
-    }
-    target[index] = '\0';
-}
-
-static void consider(CoverState *state, const ScanEntry *entry)
-{
-    for (uint32_t stem = 0; stem < STEM_COUNT; stem++) {
-        CoverMatch *match = &state->matches[stem];
-        for (uint32_t suffix = 0; suffix < SUFFIX_COUNT; suffix++) {
-            if (is_name(entry->name, STEMS[stem], SUFFIXES[suffix]) &&
-                (match->name[0] == '\0' || before(entry->name, match->name))) {
-                copy_name(match->name, entry->name);
-                match->modified = entry->modified;
-            }
-        }
-    }
-}
-
 static uint32_t folder_length(const char *path)
 {
     uint32_t slash = 0;
@@ -207,28 +158,24 @@ static uint32_t folder_length(const char *path)
     return slash;
 }
 
-static const CoverMatch *best_match(CoverState *state, const CoverJob *job)
+static void cut_to_folder(CoverState *state)
 {
     uint32_t length = folder_length(state->path);
     state->path[length > 0 ? length : 1] = '\0';
-    for (uint32_t stem = 0; stem < STEM_COUNT; stem++) {
-        state->matches[stem].name[0] = '\0';
-    }
+}
+
+static bool best_match(CoverState *state, const CoverJob *job)
+{
+    cut_to_folder(state);
+    cover_art_pick_reset(&state->pick);
     if (!job->files.open_dir(job->files.context, state->path)) {
-        return NULL;
+        return false;
     }
     while (job->files.next_entry(job->files.context, &state->entry)) {
-        if (!state->entry.directory) {
-            consider(state, &state->entry);
-        }
+        cover_art_pick_offer(&state->pick, &state->entry);
     }
     job->files.close_dir(job->files.context);
-    for (uint32_t stem = 0; stem < STEM_COUNT; stem++) {
-        if (state->matches[stem].name[0] != '\0') {
-            return &state->matches[stem];
-        }
-    }
-    return NULL;
+    return cover_art_pick_found(&state->pick);
 }
 
 static bool append_name(CoverState *state, const char *name)
@@ -247,16 +194,16 @@ static bool append_name(CoverState *state, const char *name)
     return true;
 }
 
-static bool open_art_file(CoverState *state, const CoverJob *job, CoverMatch match, ArtFile *art)
+static bool open_art_file(CoverState *state, const CoverJob *job, ArtFile *art)
 {
     uint32_t size = 0;
-    if (!append_name(state, match.name) ||
+    if (!append_name(state, state->pick.name) ||
         !job->files.open_file(job->files.context, state->path, &art->source, &size)) {
         return false;
     }
     art->offset = 0;
     art->length = size;
-    art->stamp = art_stamp(state->path, size, match.modified, ART_FILE);
+    art->stamp = art_stamp(state->path, size, state->pick.modified, ART_FILE);
     return true;
 }
 
@@ -283,9 +230,8 @@ static bool open_folder_art(CoverState *state, const CoverJob *job, ArtFile *art
             folder_tried(state, info.folder)) {
             continue;
         }
-        const CoverMatch *match = best_match(state, job);
-        if (match != NULL) {
-            return open_art_file(state, job, *match, art);
+        if (best_match(state, job)) {
+            return open_art_file(state, job, art);
         }
     }
     return false;
@@ -297,6 +243,85 @@ static bool open_art(CoverState *state, const CoverJob *job, ArtFile *art)
         return false;
     }
     return open_embedded(state, job, art) || open_folder_art(state, job, art);
+}
+
+static bool embedded_fact(CoverState *state, ExpectedArt *expected)
+{
+    ArtTrackFact fact;
+    LibraryTrack track;
+    if (!art_facts_track(&state->facts, state->album.first_track, &fact)) {
+        expected->kind = ART_UNKNOWN;
+        return true;
+    }
+    if (fact.picture_kind != TAG_PICTURE_RAW || fact.picture_length == 0) {
+        return false;
+    }
+    if (!read_track_path(state, state->album.first_track, &track)) {
+        expected->kind = ART_UNKNOWN;
+        return true;
+    }
+    expected->kind = ART_EXPECTED;
+    expected->embedded = true;
+    expected->stamp = art_stamp(state->path, fact.size, fact.picture_length, ART_EMBEDDED);
+    return true;
+}
+
+static bool folder_pick_of(CoverState *state, uint32_t track, bool *known)
+{
+    ArtTrackFact fact;
+    *known = art_facts_track(&state->facts, track, &fact);
+    if (!*known || folder_tried(state, fact.folder)) {
+        return false;
+    }
+    *known = art_facts_folder(&state->facts, fact.folder, &state->pick);
+    return *known && cover_art_pick_found(&state->pick);
+}
+
+static void expect_folder_art(CoverState *state, uint32_t track, ExpectedArt *expected)
+{
+    LibraryTrack info;
+    expected->kind = ART_UNKNOWN;
+    if (!read_track_path(state, track, &info)) {
+        return;
+    }
+    cut_to_folder(state);
+    if (append_name(state, state->pick.name)) {
+        expected->kind = ART_EXPECTED;
+        expected->embedded = false;
+        expected->stamp = art_stamp(state->path, state->pick.size, state->pick.modified, ART_FILE);
+    }
+}
+
+static ExpectedArt expect_art(CoverState *state)
+{
+    ExpectedArt expected = {.kind = ART_UNKNOWN};
+    if (!state->facts.valid || embedded_fact(state, &expected)) {
+        return expected;
+    }
+    expected.kind = ART_ABSENT;
+    state->folder_count = 0;
+    for (uint32_t index = 0; index < state->album.track_count; index++) {
+        bool known = true;
+        uint32_t track = state->album.first_track + index;
+        if (folder_pick_of(state, track, &known)) {
+            expect_folder_art(state, track, &expected);
+            return expected;
+        }
+        if (!known) {
+            expected.kind = ART_UNKNOWN;
+            return expected;
+        }
+    }
+    return expected;
+}
+
+static bool open_expected(CoverState *state, const CoverJob *job, const ExpectedArt *expected,
+                          ArtFile *art)
+{
+    if (expected->kind != ART_EXPECTED) {
+        return false;
+    }
+    return expected->embedded ? open_embedded(state, job, art) : open_folder_art(state, job, art);
 }
 
 static bool decode_art(CoverState *state, const ArtFile *art)
@@ -382,10 +407,30 @@ static ScanResult place_cover(CoverState *state, const CoverJob *job, const ArtF
     return SCAN_OK;
 }
 
+static bool reuse_expected(CoverState *state, const ExpectedArt *expected, CoverStats *stats)
+{
+    uint32_t position = 0;
+    if (expected->kind != ART_EXPECTED || !cover_index_find(&state->index, state->key, &position) ||
+        !cover_index_reusable(&state->index, position, expected->stamp)) {
+        return false;
+    }
+    cover_index_claim(&state->index, position);
+    stats->reused++;
+    return true;
+}
+
 static ScanResult cover_album(CoverState *state, const CoverJob *job, CoverStats *stats)
 {
+    ExpectedArt expected = expect_art(state);
+    if (expected.kind == ART_ABSENT) {
+        stats->missing++;
+        return SCAN_OK;
+    }
+    if (reuse_expected(state, &expected, stats)) {
+        return SCAN_OK;
+    }
     ArtFile art;
-    if (!open_art(state, job, &art)) {
+    if (!open_expected(state, job, &expected, &art) && !open_art(state, job, &art)) {
         stats->missing++;
         return SCAN_OK;
     }
@@ -486,6 +531,8 @@ ScanResult cover_build(const CoverJob *job, CoverStats *stats)
         return SCAN_NO_ROOM;
     }
     state->library = probe;
+    art_facts_load(&state->facts, job->scratch, job->scratch_size,
+                   library_count(&probe, LIBRARY_TRACKS));
     if (!settle_previous(state, stats->albums)) {
         return SCAN_WRITE_FAILED;
     }

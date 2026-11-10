@@ -469,3 +469,13 @@ BuilderResult library_builder_finish(LibraryBuilder *builder, ByteSink sink, uin
     result = builder_encode(state, prepared, sink, capacity, length);
     return result != BUILDER_OK ? result : outcome(state);
 }
+
+uint32_t library_builder_track_order(const LibraryBuilder *builder)
+{
+    const BuilderState *state = state_of(builder);
+    if (state == NULL || !state->prepare_done || state->prepare_result != BUILDER_OK ||
+        state->prepared == NULL) {
+        return LIBRARY_BUILDER_NO_ORDER;
+    }
+    return state->prepared->final_tracks.offset;
+}

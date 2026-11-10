@@ -40,6 +40,7 @@ static bool next_entry(void *context, ScanEntry *entry)
     }
     entry->directory = files->entry.directory;
     entry->modified = files->entry.modified;
+    entry->size = files->entry.size;
     memcpy(entry->name, files->entry.name, sizeof entry->name);
     return true;
 }
@@ -156,6 +157,8 @@ int main(int argc, char **argv)
         .capacity = COVERS_CAPACITY,
         .memory = memory,
         .size = sizeof memory,
+        .scratch = {read_output, &scratch},
+        .scratch_size = SCRATCH_CAPACITY,
     };
     result = cover_build(&job, &cover_stats);
     if (result != SCAN_OK) {

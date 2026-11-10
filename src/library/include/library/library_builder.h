@@ -3,6 +3,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define LIBRARY_BUILDER_NO_ORDER 0xFFFFFFFFu
+
 typedef struct BuilderTrack {
     const char *path;
     const char *title;
@@ -50,3 +52,4 @@ BuilderResult library_builder_begin_playlist(LibraryBuilder *builder, const char
 BuilderResult library_builder_playlist_entry(LibraryBuilder *builder, const char *entry);
 BuilderResult library_builder_finish(LibraryBuilder *builder, ByteSink sink, uint32_t capacity,
                                      uint32_t *length);
+uint32_t library_builder_track_order(const LibraryBuilder *builder);
