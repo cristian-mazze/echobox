@@ -4,5 +4,6 @@
 const LibraryScanEntry LIBRARY_SCAN_ENTRY = {
     .magic = LIBRARY_SCAN_MAGIC,
     .scan = library_scan,
-    .covers = cover_build,
+    .reconcile = cover_reconcile,
+    .fill = cover_fill,
 };

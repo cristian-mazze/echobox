@@ -44,7 +44,8 @@ typedef enum ScanResult {
     SCAN_NO_ROOM,
     SCAN_NO_CODE,
     SCAN_RESTART_NEEDED,
-    SCAN_NO_SCRATCH
+    SCAN_NO_SCRATCH,
+    SCAN_CANCELLED
 } ScanResult;
 
 typedef struct ScanStats {
@@ -66,15 +67,19 @@ typedef struct ScanJob {
     ScanProgress progress;
 } ScanJob;
 
-#define LIBRARY_SCAN_MAGIC 0x4E414353u
+#define LIBRARY_SCAN_MAGIC 0x32414353u
 
 struct CoverJob;
+struct CoverPlan;
 struct CoverStats;
 
 typedef struct LibraryScanEntry {
     uint32_t magic;
     ScanResult (*scan)(const ScanJob *job, ScanStats *stats);
-    ScanResult (*covers)(const struct CoverJob *job, struct CoverStats *stats);
+    ScanResult (*reconcile)(const struct CoverJob *job, const struct CoverPlan *plan,
+                            struct CoverStats *stats);
+    ScanResult (*fill)(const struct CoverJob *job, const struct CoverPlan *plan,
+                       struct CoverStats *stats);
 } LibraryScanEntry;
 
 extern const LibraryScanEntry LIBRARY_SCAN_ENTRY;

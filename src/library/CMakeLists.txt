@@ -1,5 +1,7 @@
 add_library(echo_library STATIC
     block_cache.c
+    cover_flow_order.c
+    cover_state.c
     covers.c
     favorites.c
     library.c
@@ -21,6 +23,7 @@ add_library(echo_library_scan STATIC
     cover_art_rules.c
     cover_build.c
     cover_index.c
+    cover_pass.c
     library_builder.c
     library_builder_albums.c
     library_builder_encode.c
@@ -48,3 +51,14 @@ target_link_libraries(echo_library_scan
     PUBLIC echo_core echo_image echo_library
     PRIVATE echo_options
 )
+if(CMAKE_CROSSCOMPILING)
+    set_source_files_properties(
+        art_facts.c
+        cover_art_rules.c
+        cover_build.c
+        cover_index.c
+        cover_pass.c
+        library_scan.c
+        PROPERTIES COMPILE_OPTIONS -Os
+    )
+endif()

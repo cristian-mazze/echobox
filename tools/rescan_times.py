@@ -4,14 +4,14 @@ import sys
 from pathlib import Path
 
 MAGIC = b"EMRT"
-VERSION = 1
 HEADER = struct.Struct("<4sHH")
 KINDS = ("list", "open", "read", "write", "total")
 PASSES = ("library", "covers")
 SLOTS = len(KINDS) * len(PASSES)
-COUNTERS = ("albums", "covers", "reused", "missing", "decoded")
-BODY = struct.Struct("<" + "I" * (SLOTS * 2 + len(COUNTERS)))
-RECORD_SIZE = HEADER.size + BODY.size
+COUNTERS = {
+    1: ("albums", "covers", "reused", "missing", "decoded"),
+    2: ("albums", "covers", "reused", "missing", "decoded", "overflow", "pending"),
+}
 IO_KINDS = ("list", "open", "read", "write")
 
 
@@ -19,18 +19,29 @@ class TimesError(ValueError):
     pass
 
 
+def body_for(version):
+    return struct.Struct("<" + "I" * (SLOTS * 2 + len(COUNTERS[version])))
+
+
+def record_size(version):
+    return HEADER.size + body_for(version).size
+
+
 def parse(data):
-    if len(data) < RECORD_SIZE:
-        raise TimesError(f"file is {len(data)} bytes, an EMRT record needs {RECORD_SIZE}")
+    if len(data) < HEADER.size:
+        raise TimesError(f"file is {len(data)} bytes, too short for an EMRT header")
     magic, version, _ = HEADER.unpack_from(data)
     if magic != MAGIC:
         raise TimesError(f"magic {magic!r} is not {MAGIC!r}; this file was not written by EchoPod")
-    if version != VERSION:
-        raise TimesError(f"version {version} is not supported, expected {VERSION}")
-    values = BODY.unpack_from(data, HEADER.size)
+    if version not in COUNTERS:
+        raise TimesError(f"version {version} is not supported, expected one of {sorted(COUNTERS)}")
+    if len(data) < record_size(version):
+        raise TimesError(f"file is {len(data)} bytes, version {version} needs {record_size(version)}")
+    values = body_for(version).unpack_from(data, HEADER.size)
     return {
+        "version": version,
         "passes": [pass_times(values, index) for index in range(len(PASSES))],
-        "covers": dict(zip(COUNTERS, values[SLOTS * 2:])),
+        "covers": dict(zip(COUNTERS[version], values[SLOTS * 2:])),
     }
 
 

@@ -882,11 +882,22 @@ static void explain_refusals(uint32_t now_ms)
     }
 }
 
+static RescanAnchor rescan_anchor(void)
+{
+    PlayerStatus status = player_status(&app.player);
+    LibraryTrack track;
+    if (!status.has_track || !library_read_track(&app.library.library, status.track, &track)) {
+        return (RescanAnchor){.known = false, .key = 0};
+    }
+    return (RescanAnchor){.known = true,
+                          .key = library_album_key(&app.library.library, track.album)};
+}
+
 static void run_rescan(void)
 {
     app_show_notice(i18n_text(STR_RESCAN_TITLE), i18n_text(STR_RESCAN_STARTING));
     RescanProgress progress = {show_rescan_progress, show_cover_progress};
-    RescanOutcome outcome = library_rescan_run(progress);
+    RescanOutcome outcome = library_rescan_run(progress, rescan_anchor());
     static char message[MESSAGE_TEXT_CAPACITY];
     const char *text = library_rescan_message(outcome, message, sizeof message);
     if (outcome.result == SCAN_OK) {

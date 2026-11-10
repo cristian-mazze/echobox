@@ -5,9 +5,12 @@
 #include "core/i18n.h"
 #include "core/string_builder.h"
 #include "cover_cache.h"
+#include "cover_state_store.h"
 #include "hal/clock.h"
 #include "hal/storage.h"
 #include "hal/system.h"
+#include "library/cover_state.h"
+#include "library/library.h"
 #include "library_store.h"
 
 static const char MUSIC_ROOT[] = "/";
@@ -15,7 +18,8 @@ const char LIBRARY_SCRATCH_PATH[] = "/.echo/build.tmp";
 const char RESCAN_TIMES_PATH[] = "/.echo/rescan_times.bin";
 
 enum {
-    NUMBER_CAPACITY = 12
+    NUMBER_CAPACITY = 12,
+    STATE_ROOM = (COVER_STATE_BYTES + 7) & ~7
 };
 
 enum {
@@ -30,11 +34,11 @@ enum {
 };
 
 enum {
-    TIMES_VERSION = 1,
+    TIMES_VERSION = 2,
     TIMES_VERSION_FIELD = 4,
     TIMES_SPENT_FIELD = 8,
     TIMES_COVERS_FIELD = TIMES_SPENT_FIELD + TIME_SLOTS * 2 * 4,
-    TIMES_COVER_COUNTERS = 5,
+    TIMES_COVER_COUNTERS = 7,
     TIMES_BYTES = TIMES_COVERS_FIELD + TIMES_COVER_COUNTERS * 4
 };
 
@@ -56,6 +60,7 @@ typedef struct RescanFiles {
     HalFile scratch;
     HalDirEntry entry;
     RescanProgress progress;
+    RescanAnchor anchor;
 } RescanFiles;
 
 static bool open_dir(void *context, const char *path)
@@ -190,36 +195,72 @@ static bool music_root_exists(void)
     return true;
 }
 
-static ScanResult build_covers(const LibraryScanEntry *entry, const ScanJob *scan,
-                               CoverStats *stats)
+static uint32_t rescan_clock(void *context)
+{
+    (void)context;
+    return hal_clock_milliseconds();
+}
+
+static uint32_t fingerprint_of(RescanFiles *files)
+{
+    Library library;
+    ByteSource source = {read_handle, &files->library};
+    bool opened = library_open(&library, source, files->library.size) == LIBRARY_OK;
+    return opened ? library_fingerprint(&library) : 0;
+}
+
+static CoverJob cover_job(const ScanJob *scan, uint32_t capacity, bool previous)
 {
     RescanFiles *files = scan->files.context;
-    uint32_t capacity = reserved_size_of(COVER_CACHE_PATH);
-    *stats = (CoverStats){.albums = 0, .covers = 0, .reused = 0, .missing = 0, .decoded = 0};
-    if (capacity == 0) {
-        return SCAN_NO_ROOM;
-    }
-    if (!hal_file_open(&files->library, LIBRARY_STORE_PATH)) {
-        return SCAN_WRITE_FAILED;
-    }
-    bool previous = hal_file_open(&files->covers, COVER_CACHE_PATH);
-    CoverJob job = {
+    return (CoverJob){
         .files = scan->files,
         .library = {read_handle, &files->library},
         .library_size = files->library.size,
         .sink = {write_covers, NULL},
         .previous = {previous ? read_handle : NULL, &files->covers},
         .capacity = capacity,
-        .memory = scan->memory,
-        .size = scan->size,
+        .memory = (uint8_t *)scan->memory + STATE_ROOM,
+        .size = scan->size - STATE_ROOM,
         .progress = {report_covers, files},
         .scratch = {read_handle, &files->scratch},
         .scratch_size = files->scratch.size,
     };
-    ScanResult result = entry->covers(&job, stats);
+}
+
+static ScanResult reconcile_covers(const LibraryScanEntry *entry, const ScanJob *scan,
+                                   uint32_t capacity, CoverStats *stats)
+{
+    RescanFiles *files = scan->files.context;
+    uint8_t *state = scan->memory;
+    cover_state_store_load(state, fingerprint_of(files));
+    bool previous = hal_file_open(&files->covers, COVER_CACHE_PATH);
+    CoverJob job = cover_job(scan, capacity, previous);
+    CoverPlan plan = {.budget = {COVER_INITIAL_MS, COVER_INITIAL_ALBUMS},
+                      .clock = {rescan_clock, NULL},
+                      .anchored = files->anchor.known,
+                      .anchor_key = files->anchor.key,
+                      .state = state};
+    ScanResult result = entry->reconcile(&job, &plan, stats);
+    (void)cover_state_store_save(state);
     if (previous) {
         hal_file_close(&files->covers);
     }
+    return result;
+}
+
+static ScanResult build_covers(const LibraryScanEntry *entry, const ScanJob *scan,
+                               CoverStats *stats)
+{
+    RescanFiles *files = scan->files.context;
+    uint32_t capacity = reserved_size_of(COVER_CACHE_PATH);
+    *stats = (CoverStats){0};
+    if (capacity == 0 || scan->size <= STATE_ROOM) {
+        return SCAN_NO_ROOM;
+    }
+    if (!hal_file_open(&files->library, LIBRARY_STORE_PATH)) {
+        return SCAN_WRITE_FAILED;
+    }
+    ScanResult result = reconcile_covers(entry, scan, capacity, stats);
     hal_file_close(&files->library);
     return result;
 }
@@ -233,8 +274,9 @@ static void put_times_u32(uint8_t *bytes, uint32_t value)
 
 static void pack_cover_counters(const CoverStats *covers, uint8_t *bytes)
 {
-    const uint32_t counters[TIMES_COVER_COUNTERS] = {covers->albums, covers->covers, covers->reused,
-                                                     covers->missing, covers->decoded};
+    const uint32_t counters[TIMES_COVER_COUNTERS] = {
+        covers->albums,  covers->covers,   covers->reused, covers->missing,
+        covers->decoded, covers->overflow, covers->pending};
     for (uint32_t index = 0; index < TIMES_COVER_COUNTERS; index++) {
         put_times_u32(bytes + index * 4, counters[index]);
     }
@@ -269,7 +311,7 @@ static void run_passes(const LibraryScanEntry *entry, const ScanJob *job, Rescan
     save_times(&outcome->covers);
 }
 
-RescanOutcome library_rescan_run(RescanProgress progress)
+RescanOutcome library_rescan_run(RescanProgress progress, RescanAnchor anchor)
 {
     static RescanFiles files;
     RescanOutcome outcome = {.result = SCAN_NO_MUSIC_ROOT, .cover_result = SCAN_OK};
@@ -292,6 +334,7 @@ RescanOutcome library_rescan_run(RescanProgress progress)
         return outcome;
     }
     files.progress = progress;
+    files.anchor = anchor;
     uint32_t size = 0;
     void *memory = hal_system_borrow_scratch(&size);
     uint32_t listing_size = 0;
@@ -338,6 +381,8 @@ static const char *error_text(ScanResult result)
         return i18n_text(STR_RESCAN_NO_CODE);
     case SCAN_RESTART_NEEDED:
         return i18n_text(STR_RESCAN_RESTART_NEEDED);
+    case SCAN_CANCELLED:
+        return "";
     }
     return "";
 }

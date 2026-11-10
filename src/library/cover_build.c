@@ -2,22 +2,19 @@
 
 #include <stddef.h>
 
-#include "art_facts.h"
 #include "core/hash.h"
-#include "cover_art_rules.h"
-#include "cover_index.h"
+#include "cover_work.h"
 #include "image/cover_image.h"
-#include "library/covers.h"
-#include "library/library.h"
-#include "library/track_tags.h"
+#include "library/cover_state.h"
 
 enum {
-    MAX_FOLDERS = 16,
+    MAX_FOLDERS = COVER_WORK_MAX_FOLDERS,
     FULL_BYTES = COVER_FULL_PIXELS * 2,
     HALF_BYTES = COVER_HALF_PIXELS * 2,
     STAMP_NUMBERS = 3,
     ART_EMBEDDED = 1,
-    ART_FILE = 2
+    ART_FILE = 2,
+    BITS_PER_BYTE = 8
 };
 
 typedef struct ArtFile {
@@ -27,35 +24,12 @@ typedef struct ArtFile {
     uint32_t stamp;
 } ArtFile;
 
-typedef enum ArtExpectation {
-    ART_UNKNOWN,
-    ART_ABSENT,
-    ART_EXPECTED
-} ArtExpectation;
-
-typedef struct ExpectedArt {
-    ArtExpectation kind;
-    bool embedded;
-    uint32_t stamp;
-} ExpectedArt;
-
-typedef struct CoverState {
-    Library library;
-    TrackTags tags;
-    ScanEntry entry;
-    LibraryAlbum album;
-    uint32_t key;
-    char path[SCAN_PATH_CAPACITY + 2];
-    CoverArtPick pick;
-    ArtFacts facts;
-    uint16_t full[COVER_FULL_PIXELS];
-    uint16_t half[COVER_HALF_PIXELS];
-    uint16_t folders[MAX_FOLDERS];
-    uint32_t folder_count;
-    CoverIndex index;
-    uint8_t *decode_memory;
-    uint32_t decode_size;
-} CoverState;
+typedef enum Placement {
+    PLACEMENT_DONE,
+    PLACEMENT_NO_ROOM,
+    PLACEMENT_UNDECODABLE,
+    PLACEMENT_FAILED
+} Placement;
 
 static uint32_t index_capacity(CoverLayout layout, uint32_t albums, uint32_t previous)
 {
@@ -63,21 +37,31 @@ static uint32_t index_capacity(CoverLayout layout, uint32_t albums, uint32_t pre
     return limit > previous ? limit : previous;
 }
 
-typedef enum Placement {
-    PLACEMENT_DONE,
-    PLACEMENT_SKIPPED,
-    PLACEMENT_FAILED
-} Placement;
+static uint32_t bit_bytes(uint32_t bits)
+{
+    return (bits + BITS_PER_BYTE - 1) / BITS_PER_BYTE;
+}
+
+static void clear(uint8_t *bytes, uint32_t length)
+{
+    for (uint32_t index = 0; index < length; index++) {
+        bytes[index] = 0;
+    }
+}
 
 static CoverState *prepare(const CoverJob *job, uint32_t albums, CoverLayout layout,
                            uint32_t previous)
 {
     CoverArena arena = {job->memory, (uint8_t *)job->memory + job->size};
     CoverState *state = cover_arena_take(&arena, sizeof(CoverState));
+    uint8_t *pending = cover_arena_take(&arena, bit_bytes(albums) + 1);
     uint32_t capacity = index_capacity(layout, albums, previous);
-    if (state == NULL || !cover_index_carve(&state->index, &arena, layout, capacity)) {
+    if (state == NULL || pending == NULL ||
+        !cover_index_carve(&state->index, &arena, layout, capacity)) {
         return NULL;
     }
+    clear(pending, bit_bytes(albums) + 1);
+    state->pending = pending;
     state->index.sink = job->sink;
     state->decode_memory = arena.cursor;
     state->decode_size = (uint32_t)(arena.end - arena.cursor);
@@ -318,17 +302,10 @@ static ExpectedArt expect_art(CoverState *state)
 static bool open_expected(CoverState *state, const CoverJob *job, const ExpectedArt *expected,
                           ArtFile *art)
 {
-    if (expected->kind != ART_EXPECTED) {
+    if (expected->kind != ART_EXPECTED || !state->facts.valid) {
         return false;
     }
     return expected->embedded ? open_embedded(state, job, art) : open_folder_art(state, job, art);
-}
-
-static bool decode_art(CoverState *state, const ArtFile *art)
-{
-    ImageSource image = {art->source.read, art->source.context, art->offset, art->length};
-    return cover_image_decode(image, state->decode_memory, state->decode_size, state->full,
-                              state->half) == COVER_IMAGE_OK;
 }
 
 static void pack_pixels(uint16_t *pixels, uint32_t count)
@@ -354,7 +331,7 @@ static Placement add_cover(CoverState *state, const CoverJob *job, uint32_t posi
 {
     uint32_t slot = 0;
     if (!cover_index_free_slot(&state->index, &slot)) {
-        return PLACEMENT_SKIPPED;
+        return PLACEMENT_NO_ROOM;
     }
     bool added = write_record(state, job, slot) &&
                  cover_index_add(&state->index, position, (CoverEntry){state->key, stamp}, slot);
@@ -377,41 +354,149 @@ static Placement swap_cover(CoverState *state, const CoverJob *job, uint32_t pos
     return rewritten ? PLACEMENT_DONE : PLACEMENT_FAILED;
 }
 
+static bool guarded_read(void *context, uint32_t offset, void *buffer, uint32_t length)
+{
+    const CoverGuard *guard = context;
+    if (guard->cancel != NULL && *guard->cancel) {
+        return false;
+    }
+    return guard->inner.read(guard->inner.context, offset, buffer, length);
+}
+
+static void guard_art(CoverState *state, ArtFile *art)
+{
+    state->guard.inner = art->source;
+    state->guard.cancel = state->plan->cancel;
+    art->source = (ByteSource){guarded_read, &state->guard};
+}
+
+static bool decode_art(CoverState *state, const ArtFile *art)
+{
+    ImageSource image = {art->source.read, art->source.context, art->offset, art->length};
+    return cover_image_decode(image, state->decode_memory, state->decode_size, state->full,
+                              state->half) == COVER_IMAGE_OK;
+}
+
 static Placement decode_cover(CoverState *state, const CoverJob *job, const ArtFile *art)
 {
     uint32_t position = 0;
     bool known = cover_index_find(&state->index, state->key, &position);
-    if ((!known && !cover_index_has_room(&state->index)) || !decode_art(state, art)) {
-        return PLACEMENT_SKIPPED;
+    if (!known && !cover_index_has_room(&state->index)) {
+        return PLACEMENT_NO_ROOM;
+    }
+    state->attempts++;
+    if (!decode_art(state, art)) {
+        return PLACEMENT_UNDECODABLE;
     }
     return known ? swap_cover(state, job, position, art->stamp)
                  : add_cover(state, job, position, art->stamp);
 }
 
-static ScanResult place_cover(CoverState *state, const CoverJob *job, const ArtFile *art,
-                              CoverStats *stats)
+static void note_failure(CoverState *state, uint32_t stamp)
+{
+    if (state->plan->state != NULL) {
+        cover_state_note_failure(state->plan->state, state->key, stamp);
+    }
+}
+
+static void forget_failure(CoverState *state)
+{
+    if (state->plan->state != NULL) {
+        cover_state_forget_failure(state->plan->state, state->key);
+    }
+}
+
+static ScanResult drop_undecodable(CoverState *state, uint32_t stamp, CoverStats *stats)
 {
     uint32_t position = 0;
-    if (cover_index_find(&state->index, state->key, &position) &&
-        cover_index_reusable(&state->index, position, art->stamp)) {
-        cover_index_claim(&state->index, position);
-        stats->reused++;
-        return SCAN_OK;
+    uint32_t slot = 0;
+    if (cover_work_cancelled(state)) {
+        return SCAN_CANCELLED;
     }
-    Placement placement = decode_cover(state, job, art);
-    if (placement == PLACEMENT_FAILED) {
+    note_failure(state, stamp);
+    stats->missing++;
+    if (cover_index_find(&state->index, state->key, &position) &&
+        !cover_index_retire(&state->index, position, &slot)) {
         return SCAN_WRITE_FAILED;
     }
-    stats->decoded += placement == PLACEMENT_DONE ? 1u : 0u;
-    stats->missing += placement == PLACEMENT_SKIPPED ? 1u : 0u;
     return SCAN_OK;
 }
 
-static bool reuse_expected(CoverState *state, const ExpectedArt *expected, CoverStats *stats)
+static ScanResult place_cover(CoverState *state, const CoverJob *job, const ArtFile *art,
+                              CoverStats *stats)
+{
+    state->expected.kind = ART_EXPECTED;
+    state->expected.stamp = art->stamp;
+    if (cover_work_failed(state, art->stamp)) {
+        stats->missing++;
+        return SCAN_OK;
+    }
+    if (cover_work_reuse(state, stats)) {
+        return SCAN_OK;
+    }
+    Placement placement = decode_cover(state, job, art);
+    if (placement == PLACEMENT_UNDECODABLE) {
+        return drop_undecodable(state, art->stamp, stats);
+    }
+    if (placement == PLACEMENT_FAILED) {
+        return SCAN_WRITE_FAILED;
+    }
+    stats->overflow += placement == PLACEMENT_NO_ROOM ? 1u : 0u;
+    stats->decoded += placement == PLACEMENT_DONE ? 1u : 0u;
+    if (placement == PLACEMENT_DONE) {
+        forget_failure(state);
+    }
+    return SCAN_OK;
+}
+
+bool cover_work_keep(CoverState *state)
 {
     uint32_t position = 0;
-    if (expected->kind != ART_EXPECTED || !cover_index_find(&state->index, state->key, &position) ||
-        !cover_index_reusable(&state->index, position, expected->stamp)) {
+    if (!cover_index_find(&state->index, state->key, &position)) {
+        return false;
+    }
+    cover_index_claim(&state->index, position);
+    return true;
+}
+
+ScanResult cover_work_decode(CoverState *state, const CoverJob *job, CoverStats *stats)
+{
+    ArtFile art;
+    if (!open_expected(state, job, &state->expected, &art) && !open_art(state, job, &art)) {
+        stats->missing++;
+        return SCAN_OK;
+    }
+    guard_art(state, &art);
+    ScanResult result = place_cover(state, job, &art, stats);
+    job->files.close_file(job->files.context);
+    return result;
+}
+
+static void probe_art(CoverState *state, const CoverJob *job)
+{
+    ArtFile art;
+    state->expected.kind = ART_ABSENT;
+    if (open_art(state, job, &art)) {
+        state->expected =
+            (ExpectedArt){.kind = ART_EXPECTED, .embedded = false, .stamp = art.stamp};
+        job->files.close_file(job->files.context);
+    }
+}
+
+void cover_work_expect(CoverState *state, const CoverJob *job)
+{
+    state->expected = expect_art(state);
+    if (state->expected.kind == ART_UNKNOWN) {
+        probe_art(state, job);
+    }
+}
+
+bool cover_work_reuse(CoverState *state, CoverStats *stats)
+{
+    uint32_t position = 0;
+    if (state->expected.kind != ART_EXPECTED ||
+        !cover_index_find(&state->index, state->key, &position) ||
+        !cover_index_reusable(&state->index, position, state->expected.stamp)) {
         return false;
     }
     cover_index_claim(&state->index, position);
@@ -419,36 +504,27 @@ static bool reuse_expected(CoverState *state, const ExpectedArt *expected, Cover
     return true;
 }
 
-static ScanResult cover_album(CoverState *state, const CoverJob *job, CoverStats *stats)
+bool cover_work_failed(const CoverState *state, uint32_t stamp)
 {
-    ExpectedArt expected = expect_art(state);
-    if (expected.kind == ART_ABSENT) {
-        stats->missing++;
-        return SCAN_OK;
-    }
-    if (reuse_expected(state, &expected, stats)) {
-        return SCAN_OK;
-    }
-    ArtFile art;
-    if (!open_expected(state, job, &expected, &art) && !open_art(state, job, &art)) {
-        stats->missing++;
-        return SCAN_OK;
-    }
-    ScanResult result = place_cover(state, job, &art, stats);
-    job->files.close_file(job->files.context);
-    return result;
+    return state->plan->state != NULL && cover_state_failed(state->plan->state, state->key, stamp);
 }
 
-static bool already_placed(const CoverState *state, uint32_t key)
+bool cover_work_select(CoverState *state, uint32_t album_index)
+{
+    state->key = library_album_key(&state->library, album_index);
+    return library_read_album(&state->library, album_index, &state->album);
+}
+
+bool cover_work_placed(const CoverState *state)
 {
     uint32_t position = 0;
-    return cover_index_find(&state->index, key, &position) &&
+    return cover_index_find(&state->index, state->key, &position) &&
            cover_index_claimed(&state->index, position);
 }
 
-static bool keep_present(CoverState *state, uint32_t albums)
+static bool keep_present(CoverState *state)
 {
-    for (uint32_t album_index = 0; album_index < albums; album_index++) {
+    for (uint32_t album_index = 0; album_index < state->albums; album_index++) {
         uint32_t position = 0;
         if (cover_index_find(&state->index, library_album_key(&state->library, album_index),
                              &position)) {
@@ -458,38 +534,56 @@ static bool keep_present(CoverState *state, uint32_t albums)
     return cover_index_drop_unclaimed(&state->index);
 }
 
-static void report(const CoverJob *job, uint32_t done, uint32_t total)
+bool cover_work_settle(CoverState *state)
+{
+    if (state->index.count == 0) {
+        return cover_index_clear(&state->index);
+    }
+    return keep_present(state);
+}
+
+bool cover_work_drop(CoverState *state)
+{
+    return cover_index_drop_unclaimed(&state->index);
+}
+
+bool cover_work_cancelled(const CoverState *state)
+{
+    return state->plan->cancel != NULL && *state->plan->cancel;
+}
+
+static uint32_t now_ms(const CoverState *state)
+{
+    const CoverClock *clock = &state->plan->clock;
+    return clock->now_ms != NULL ? clock->now_ms(clock->context) : 0;
+}
+
+bool cover_work_budget_left(const CoverState *state)
+{
+    const CoverBudget *budget = &state->plan->budget;
+    bool albums_left = budget->max_albums == 0 || state->attempts < budget->max_albums;
+    bool time_left = budget->max_ms == 0 || state->plan->clock.now_ms == NULL ||
+                     now_ms(state) - state->started_ms < budget->max_ms;
+    return albums_left && time_left && !cover_work_cancelled(state);
+}
+
+void cover_work_report(const CoverJob *job, uint32_t done, uint32_t total)
 {
     if (job->progress.report != NULL) {
         job->progress.report(job->progress.context, done, total);
     }
 }
 
-static ScanResult build_albums(CoverState *state, const CoverJob *job, CoverStats *stats)
+bool cover_work_pending(const CoverState *state, uint32_t album_index)
 {
-    for (uint32_t album_index = 0; album_index < stats->albums; album_index++) {
-        report(job, album_index, stats->albums);
-        state->key = library_album_key(&state->library, album_index);
-        if (!library_read_album(&state->library, album_index, &state->album) ||
-            already_placed(state, state->key)) {
-            continue;
-        }
-        ScanResult result = cover_album(state, job, stats);
-        if (result != SCAN_OK) {
-            return result;
-        }
-    }
-    report(job, stats->albums, stats->albums);
-    return SCAN_OK;
+    return (state->pending[album_index / BITS_PER_BYTE] >> (album_index % BITS_PER_BYTE) & 1u) != 0;
 }
 
-static ScanResult finish(CoverState *state, CoverStats *stats, ScanResult result)
+void cover_work_set_pending(CoverState *state, uint32_t album_index, bool pending)
 {
-    if (result == SCAN_OK && !cover_index_drop_unclaimed(&state->index)) {
-        result = SCAN_WRITE_FAILED;
-    }
-    stats->covers = state->index.count;
-    return result;
+    uint8_t mask = (uint8_t)(1u << (album_index % BITS_PER_BYTE));
+    uint8_t *byte = &state->pending[album_index / BITS_PER_BYTE];
+    *byte = (uint8_t)(pending ? *byte | mask : *byte & ~mask);
 }
 
 static CoverState *start(const CoverJob *job, uint32_t albums, CoverLayout layout)
@@ -506,35 +600,37 @@ static CoverState *start(const CoverJob *job, uint32_t albums, CoverLayout layou
     return state;
 }
 
-static bool settle_previous(CoverState *state, uint32_t albums)
+static void begin(CoverState *state, const CoverPlan *plan, const Library *library)
 {
-    if (state->index.count == 0) {
-        return cover_index_clear(&state->index);
-    }
-    return keep_present(state, albums);
+    state->library = *library;
+    state->plan = plan;
+    state->albums = library_count(library, LIBRARY_ALBUMS);
+    state->anchor = COVER_WORK_NO_ALBUM;
+    state->attempts = 0;
+    state->pending_new = 0;
+    state->pending_known = 0;
+    state->started_ms = now_ms(state);
 }
 
-ScanResult cover_build(const CoverJob *job, CoverStats *stats)
+CoverState *cover_work_start(const CoverJob *job, const CoverPlan *plan, CoverStats *stats,
+                             ScanResult *result)
 {
-    *stats = (CoverStats){.albums = 0, .covers = 0, .reused = 0, .missing = 0, .decoded = 0};
     Library probe;
+    *stats = (CoverStats){0};
+    *result = SCAN_NO_MUSIC_ROOT;
     if (library_open(&probe, job->library, job->library_size) != LIBRARY_OK) {
-        return SCAN_NO_MUSIC_ROOT;
+        return NULL;
     }
     stats->albums = library_count(&probe, LIBRARY_ALBUMS);
     CoverLayout layout = cover_layout_for(job->capacity);
     CoverState *state = start(job, stats->albums, layout);
-    if (state == NULL) {
-        return SCAN_OUT_OF_MEMORY;
+    *result = state == NULL ? SCAN_OUT_OF_MEMORY : SCAN_NO_ROOM;
+    if (state == NULL || (layout.slots == 0 && stats->albums > 0)) {
+        return NULL;
     }
-    if (layout.slots == 0 && stats->albums > 0) {
-        return SCAN_NO_ROOM;
-    }
-    state->library = probe;
+    begin(state, plan, &probe);
     art_facts_load(&state->facts, job->scratch, job->scratch_size,
                    library_count(&probe, LIBRARY_TRACKS));
-    if (!settle_previous(state, stats->albums)) {
-        return SCAN_WRITE_FAILED;
-    }
-    return finish(state, stats, build_albums(state, job, stats));
+    *result = SCAN_OK;
+    return state;
 }

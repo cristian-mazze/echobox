@@ -5,9 +5,11 @@
 
 #include "bluetooth_store.h"
 #include "cover_cache.h"
+#include "cover_state_store.h"
 #include "equalizer_store.h"
 #include "favorites_store.h"
 #include "hal/storage.h"
+#include "library/cover_state.h"
 #include "library_rescan.h"
 #include "library_store.h"
 #include "music_check.h"
@@ -34,6 +36,7 @@ static const CardFile CARD_FILES[] = {
     {PLAYER_UP_NEXT_PATH, SMALL_FILE_BYTES},    {SPOKEN_STORE_PATH, SMALL_FILE_BYTES},
     {LIBRARY_SCRATCH_PATH, SCRATCH_FILE_BYTES}, {RESCAN_TIMES_PATH, SMALL_FILE_BYTES},
     {BLUETOOTH_STORE_PATH, SMALL_FILE_BYTES},   {EQUALIZER_STORE_PATH, SMALL_FILE_BYTES},
+    {COVER_STATE_PATH, COVER_STATE_FILE_BYTES},
 };
 
 CardFilesReport card_files_prepare(void (*creating)(void))
