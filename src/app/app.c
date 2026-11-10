@@ -1173,6 +1173,11 @@ PlayerStatus app_player_status(void)
     return player_status(&app.player);
 }
 
+bool app_covers_syncing(void)
+{
+    return cover_filler_syncing(&app.filler);
+}
+
 const char *app_toast_text(void)
 {
     return app.toast.visible ? app.toast.text : NULL;

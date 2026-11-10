@@ -26,6 +26,8 @@ typedef struct CoverFiller {
     uint32_t polled_us;
     bool stop;
     uint32_t sessions;
+    uint32_t pending;
+    bool stalled;
 } CoverFiller;
 
 typedef struct CoverFillerLinks {
@@ -45,6 +47,7 @@ typedef struct CoverFillerWorld {
 void cover_filler_start(CoverFiller *filler, uint32_t now_ms);
 void cover_filler_follow(CoverFiller *filler, const CoverFillerLinks *links, uint32_t now_ms);
 bool cover_filler_due(const CoverFiller *filler, CoverFillerWorld world, uint32_t now_ms);
+bool cover_filler_syncing(const CoverFiller *filler);
 CoverFillOutcome cover_filler_run_idle(CoverFiller *filler, const CoverFillerLinks *links);
 CoverFillOutcome cover_filler_run_all(CoverFiller *filler, const CoverFillerLinks *links,
                                       void (*progress)(uint32_t done, uint32_t total));

@@ -3,10 +3,12 @@
 #include "core/hash.h"
 
 enum {
-    VERSION = 1,
+    VERSION = 2,
+    FIRST_VERSION = 1,
     VERSION_FIELD = 4,
     QUEUE_COUNT_FIELD = 6,
     FAILURE_COUNT_FIELD = 8,
+    PENDING_FIELD = 10,
     CURSOR_FIELD = 12,
     FINGERPRINT_FIELD = 16,
     CHECKSUM_FIELD = 20,
@@ -40,9 +42,14 @@ static uint32_t get32(const uint8_t *bytes, uint32_t offset)
     return get16(bytes, offset) | get16(bytes, offset + 2) << 16;
 }
 
+uint32_t cover_state_check_start(const uint8_t *header)
+{
+    return hash_update(HASH_START, header, CHECKSUM_FIELD);
+}
+
 static uint32_t checksum_of(const uint8_t *bytes)
 {
-    uint32_t hash = hash_update(HASH_START, bytes, CHECKSUM_FIELD);
+    uint32_t hash = cover_state_check_start(bytes);
     return hash_update(hash, bytes + QUEUE_FIELD, COVER_STATE_BYTES - QUEUE_FIELD);
 }
 
@@ -55,19 +62,38 @@ void cover_state_reset(uint8_t *bytes)
         bytes[index] = MAGIC[index];
     }
     put16(bytes, VERSION_FIELD, VERSION);
+    put16(bytes, PENDING_FIELD, COVER_STATE_PENDING_UNKNOWN);
+}
+
+static bool header_valid(const uint8_t *header)
+{
+    for (uint32_t index = 0; index < MAGIC_SIZE; index++) {
+        if (header[index] != MAGIC[index]) {
+            return false;
+        }
+    }
+    uint32_t version = get16(header, VERSION_FIELD);
+    return version >= FIRST_VERSION && version <= VERSION &&
+           get16(header, QUEUE_COUNT_FIELD) <= COVER_STATE_QUEUE &&
+           get16(header, FAILURE_COUNT_FIELD) <= COVER_STATE_FAILURES;
+}
+
+bool cover_state_check_finish(const uint8_t *header, uint32_t hash)
+{
+    return header_valid(header) && get32(header, CHECKSUM_FIELD) == hash;
 }
 
 bool cover_state_valid(const uint8_t *bytes)
 {
-    for (uint32_t index = 0; index < MAGIC_SIZE; index++) {
-        if (bytes[index] != MAGIC[index]) {
-            return false;
-        }
+    return cover_state_check_finish(bytes, checksum_of(bytes));
+}
+
+static void upgrade(uint8_t *bytes)
+{
+    if (get16(bytes, VERSION_FIELD) < VERSION) {
+        put16(bytes, VERSION_FIELD, VERSION);
+        put16(bytes, PENDING_FIELD, COVER_STATE_PENDING_UNKNOWN);
     }
-    return get16(bytes, VERSION_FIELD) == VERSION &&
-           get16(bytes, QUEUE_COUNT_FIELD) <= COVER_STATE_QUEUE &&
-           get16(bytes, FAILURE_COUNT_FIELD) <= COVER_STATE_FAILURES &&
-           get32(bytes, CHECKSUM_FIELD) == checksum_of(bytes);
 }
 
 void cover_state_seal(uint8_t *bytes)
@@ -80,9 +106,11 @@ void cover_state_open(uint8_t *bytes, uint32_t fingerprint)
     if (!cover_state_valid(bytes)) {
         cover_state_reset(bytes);
     }
+    upgrade(bytes);
     if (get32(bytes, FINGERPRINT_FIELD) != fingerprint) {
         put32(bytes, FINGERPRINT_FIELD, fingerprint);
         put32(bytes, CURSOR_FIELD, 0);
+        put16(bytes, PENDING_FIELD, COVER_STATE_PENDING_UNKNOWN);
     }
 }
 
@@ -94,6 +122,19 @@ uint32_t cover_state_cursor(const uint8_t *bytes)
 void cover_state_set_cursor(uint8_t *bytes, uint32_t cursor)
 {
     put32(bytes, CURSOR_FIELD, cursor);
+}
+
+uint32_t cover_state_pending(const uint8_t *bytes)
+{
+    return get16(bytes, VERSION_FIELD) < VERSION ? COVER_STATE_PENDING_UNKNOWN
+                                                 : get16(bytes, PENDING_FIELD);
+}
+
+void cover_state_set_pending(uint8_t *bytes, uint32_t pending)
+{
+    bool unknown = pending == COVER_STATE_PENDING_UNKNOWN;
+    uint32_t kept = pending > COVER_STATE_PENDING_MAX ? COVER_STATE_PENDING_MAX : pending;
+    put16(bytes, PENDING_FIELD, unknown ? COVER_STATE_PENDING_UNKNOWN : kept);
 }
 
 uint32_t cover_state_queue_count(const uint8_t *bytes)

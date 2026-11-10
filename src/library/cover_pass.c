@@ -116,6 +116,20 @@ static void count_left(const CoverState *state, CoverStats *stats)
     stats->pending = state->pending_new + state->pending_known - over;
 }
 
+static bool counts_settled(ScanResult result)
+{
+    return result == SCAN_OK || result == SCAN_CANCELLED;
+}
+
+static void note_reconciled(const CoverState *state, ScanResult result, const CoverStats *stats)
+{
+    uint8_t *saved = state->plan->state;
+    if (saved != NULL) {
+        cover_state_set_pending(saved, counts_settled(result) ? stats->pending
+                                                              : COVER_STATE_PENDING_UNKNOWN);
+    }
+}
+
 ScanResult cover_reconcile(const CoverJob *job, const CoverPlan *plan, CoverStats *stats)
 {
     ScanResult result = SCAN_OK;
@@ -132,6 +146,7 @@ ScanResult cover_reconcile(const CoverJob *job, const CoverPlan *plan, CoverStat
     }
     result = decode_pending(state, job, stats);
     count_left(state, stats);
+    note_reconciled(state, result, stats);
     cover_work_report(job, state->albums, state->albums);
     return result;
 }
@@ -187,6 +202,34 @@ static ScanResult fill_from_cursor(CoverState *state, const CoverJob *job, Cover
     return result;
 }
 
+static uint32_t pending_after(const CoverState *state, const uint8_t *saved, ScanResult result)
+{
+    uint32_t before = cover_state_pending(saved);
+    if (!counts_settled(result)) {
+        return COVER_STATE_PENDING_UNKNOWN;
+    }
+    if (cover_state_cursor(saved) >= state->albums) {
+        return 0;
+    }
+    if (before == COVER_STATE_PENDING_UNKNOWN) {
+        return before;
+    }
+    return before > state->attempts ? before - state->attempts : 0;
+}
+
+static void note_filled(const CoverState *state, ScanResult result, CoverStats *stats)
+{
+    uint8_t *saved = state->plan->state;
+    if (saved == NULL) {
+        return;
+    }
+    uint32_t left = pending_after(state, saved, result);
+    uint32_t cursor = cover_state_cursor(saved);
+    cover_state_set_pending(saved, left);
+    bool unknown = left == COVER_STATE_PENDING_UNKNOWN;
+    stats->pending = unknown && cursor < state->albums ? state->albums - cursor : left;
+}
+
 ScanResult cover_fill(const CoverJob *job, const CoverPlan *plan, CoverStats *stats)
 {
     ScanResult result = SCAN_OK;
@@ -201,6 +244,7 @@ ScanResult cover_fill(const CoverJob *job, const CoverPlan *plan, CoverStats *st
     if (result == SCAN_OK) {
         result = fill_from_cursor(state, job, stats);
     }
+    note_filled(state, result, stats);
     stats->covers = state->index.count;
     return result;
 }

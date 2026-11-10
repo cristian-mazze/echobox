@@ -279,6 +279,116 @@ static void a_new_library_restarts_the_cursor_but_keeps_failures(void)
     CHECK_EQUAL(6u, cover_state_queue_key(state, 1));
 }
 
+static void the_rescan_records_how_many_covers_are_left(void)
+{
+    CoverStats stats;
+    CoverPlan plan = plan_for(2);
+    five_albums();
+    CHECK_EQUAL(COVER_STATE_PENDING_UNKNOWN, cover_state_pending(state));
+    CHECK_EQUAL(SCAN_OK, reconcile(&plan, &stats));
+    CHECK_EQUAL(3u, cover_state_pending(state));
+}
+
+static void each_fill_counts_the_pending_covers_down_to_zero(void)
+{
+    CoverStats stats;
+    CoverPlan plan = plan_for(2);
+    five_albums();
+    CHECK_EQUAL(SCAN_OK, reconcile(&plan, &stats));
+    plan.budget.max_albums = 1;
+    CHECK_EQUAL(SCAN_OK, fill(&plan, &stats));
+    CHECK_EQUAL(2u, cover_state_pending(state));
+    CHECK_EQUAL(2u, stats.pending);
+    plan.budget.max_albums = 0;
+    CHECK_EQUAL(SCAN_OK, fill(&plan, &stats));
+    CHECK_EQUAL(0u, cover_state_pending(state));
+    CHECK_EQUAL(0u, stats.pending);
+}
+
+static void remembered_failures_and_overflow_are_not_pending(void)
+{
+    CoverStats stats;
+    CoverPlan plan = plan_for(0);
+    card_reset();
+    card_add_album("Alpha", RED);
+    card_add_broken_album("Broken");
+    card_add_bare_album("Bare");
+    cover_state_reset(state);
+    cover_state_open(state, 1);
+    card_scan();
+    CHECK_EQUAL(SCAN_OK, reconcile(&plan, &stats));
+    CHECK_EQUAL(0u, cover_state_pending(state));
+    CHECK_EQUAL(SCAN_OK, reconcile(&plan, &stats));
+    CHECK_EQUAL(0u, cover_state_pending(state));
+    five_albums();
+    card_covers_capacity = 16 + 3 * CARD_RECORD_SLOT;
+    CHECK_EQUAL(SCAN_OK, reconcile(&plan, &stats));
+    CHECK_EQUAL(2u, stats.overflow);
+    CHECK_EQUAL(0u, cover_state_pending(state));
+}
+
+static void an_unknown_count_settles_when_the_cursor_reaches_the_end(void)
+{
+    CoverStats stats;
+    CoverPlan plan = plan_for(1);
+    five_albums();
+    CHECK_EQUAL(SCAN_OK, reconcile(&plan, &stats));
+    cover_state_set_pending(state, COVER_STATE_PENDING_UNKNOWN);
+    CHECK_EQUAL(SCAN_OK, fill(&plan, &stats));
+    CHECK_EQUAL(COVER_STATE_PENDING_UNKNOWN, cover_state_pending(state));
+    CHECK(stats.pending > 0u);
+    plan.budget.max_albums = 0;
+    CHECK_EQUAL(SCAN_OK, fill(&plan, &stats));
+    CHECK_EQUAL(0u, cover_state_pending(state));
+    CHECK_EQUAL(0u, stats.pending);
+}
+
+static void make_version_1(uint8_t *bytes)
+{
+    bytes[4] = 1;
+    bytes[5] = 0;
+    bytes[10] = 0;
+    bytes[11] = 0;
+    cover_state_seal(bytes);
+}
+
+static void a_version_1_state_is_kept_with_an_unknown_count(void)
+{
+    static const uint32_t KEYS[] = {4, 6};
+    cover_state_reset(state);
+    cover_state_open(state, 1);
+    cover_state_set_cursor(state, 3);
+    cover_state_note_failure(state, 8, 2);
+    cover_state_set_queue(state, KEYS, 2);
+    make_version_1(state);
+    CHECK(cover_state_valid(state));
+    CHECK_EQUAL(COVER_STATE_PENDING_UNKNOWN, cover_state_pending(state));
+    cover_state_open(state, 1);
+    CHECK_EQUAL(3u, cover_state_cursor(state));
+    CHECK(cover_state_failed(state, 8, 2));
+    CHECK_EQUAL(2u, cover_state_queue_count(state));
+    CHECK_EQUAL(COVER_STATE_PENDING_UNKNOWN, cover_state_pending(state));
+    cover_state_set_pending(state, 7);
+    cover_state_seal(state);
+    CHECK(cover_state_valid(state));
+    CHECK_EQUAL(7u, cover_state_pending(state));
+}
+
+static void a_new_library_forgets_the_pending_count(void)
+{
+    cover_state_reset(state);
+    cover_state_open(state, 1);
+    cover_state_set_pending(state, 4);
+    cover_state_seal(state);
+    cover_state_open(state, 1);
+    CHECK_EQUAL(4u, cover_state_pending(state));
+    cover_state_seal(state);
+    cover_state_open(state, 2);
+    CHECK_EQUAL(COVER_STATE_PENDING_UNKNOWN, cover_state_pending(state));
+    cover_state_set_pending(state, 0x12345);
+    CHECK_EQUAL((uint32_t)COVER_STATE_PENDING_MAX, cover_state_pending(state));
+}
+
 int main(void)
 {
     static const TestCase cases[] = {
@@ -293,6 +403,12 @@ int main(void)
         TEST_CASE(albums_beyond_the_slots_are_counted_apart),
         TEST_CASE(a_damaged_state_starts_empty),
         TEST_CASE(a_new_library_restarts_the_cursor_but_keeps_failures),
+        TEST_CASE(the_rescan_records_how_many_covers_are_left),
+        TEST_CASE(each_fill_counts_the_pending_covers_down_to_zero),
+        TEST_CASE(remembered_failures_and_overflow_are_not_pending),
+        TEST_CASE(an_unknown_count_settles_when_the_cursor_reaches_the_end),
+        TEST_CASE(a_version_1_state_is_kept_with_an_unknown_count),
+        TEST_CASE(a_new_library_forgets_the_pending_count),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));
 }

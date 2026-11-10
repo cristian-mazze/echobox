@@ -7,6 +7,7 @@
 #include "core/key.h"
 #include "fake_hal.h"
 #include "fixture_library.h"
+#include "library/cover_state.h"
 
 enum {
     START_MS = 1000,
@@ -55,7 +56,7 @@ static void set_battery(uint8_t percent, bool usb_power)
         .known = true, .percent = percent, .millivolts = 3900, .usb_power = usb_power});
 }
 
-static void start_with_library(void)
+static void add_library_files(void)
 {
     uint32_t size = 0;
     uint32_t covers_size = 0;
@@ -65,10 +66,32 @@ static void start_with_library(void)
     fake_hal_add_file("/.echo/library.db", bytes, size);
     fake_hal_add_file("/.echo/covers.bin", covers, covers_size);
     fake_hal_add_file("/.echo/build.tmp", NULL, 16 * 1024 * 1024);
+}
+
+static void start_app(void)
+{
     set_battery(80, false);
     now_ms = START_MS;
     fake_hal_set_milliseconds(now_ms);
     app_start();
+}
+
+static void start_with_library(void)
+{
+    add_library_files();
+    start_app();
+}
+
+static void start_with_pending(uint32_t pending)
+{
+    static uint8_t state[COVER_STATE_FILE_BYTES];
+    cover_state_reset(state);
+    cover_state_open(state, 1);
+    cover_state_set_pending(state, pending);
+    cover_state_seal(state);
+    add_library_files();
+    fake_hal_add_file("/.echo/covers_state.bin", state, sizeof state);
+    start_app();
 }
 
 static void play_first_album_track(void)
@@ -82,15 +105,20 @@ static void play_first_album_track(void)
     tap(KEY_PLAY);
 }
 
-static void pause_in_the_dark(void)
+static void pause_in_the_dark_after(void (*start)(void))
 {
-    start_with_library();
+    start();
     play_first_album_track();
     fake_hal_audio_set_position(PAUSED_AT_MS);
     tap(KEY_PLAY);
     CHECK_EQUAL(PLAYER_PAUSED, app_player_status().state);
     tap(KEY_POWER);
     CHECK(!fake_hal_display_on());
+}
+
+static void pause_in_the_dark(void)
+{
+    pause_in_the_dark_after(start_with_library);
 }
 
 static void a_paused_dark_player_fills_covers_after_twenty_seconds(void)
@@ -291,10 +319,65 @@ static void scanning_all_covers_pauses_the_music_first(void)
     CHECK_EQUAL(0, fake_hal_borrows_while_playing());
 }
 
+static void start_with_nothing_pending(void)
+{
+    start_with_pending(0);
+}
+
+static void start_with_three_pending(void)
+{
+    start_with_pending(3);
+}
+
+static void nothing_pending_means_no_sync_and_no_session(void)
+{
+    pause_in_the_dark_after(start_with_nothing_pending);
+    CHECK(!app_covers_syncing());
+    int before = fake_hal_scratch_borrow_count();
+    wait_ms(QUIET_MS);
+    CHECK_EQUAL(before, fake_hal_scratch_borrow_count());
+    CHECK(!app_covers_syncing());
+}
+
+static void pending_covers_sync_until_a_session_finishes_them(void)
+{
+    pause_in_the_dark_after(start_with_three_pending);
+    CHECK(app_covers_syncing());
+    int before = fake_hal_scratch_borrow_count();
+    wait_ms(QUIET_MS);
+    CHECK_EQUAL(before + 1, fake_hal_scratch_borrow_count());
+    CHECK(!app_covers_syncing());
+}
+
+static void an_unknown_count_syncs_until_the_first_session(void)
+{
+    pause_in_the_dark();
+    CHECK(app_covers_syncing());
+    wait_ms(QUIET_MS);
+    CHECK(!app_covers_syncing());
+}
+
+static void a_damaged_state_file_reads_as_unknown(void)
+{
+    static uint8_t state[COVER_STATE_FILE_BYTES];
+    cover_state_reset(state);
+    cover_state_set_pending(state, 0);
+    cover_state_seal(state);
+    state[COVER_STATE_BYTES - 1] ^= 1;
+    add_library_files();
+    fake_hal_add_file("/.echo/covers_state.bin", state, sizeof state);
+    start_app();
+    CHECK(app_covers_syncing());
+}
+
 int main(void)
 {
     static const TestCase cases[] = {
         TEST_CASE(a_paused_dark_player_fills_covers_after_twenty_seconds),
+        TEST_CASE(nothing_pending_means_no_sync_and_no_session),
+        TEST_CASE(pending_covers_sync_until_a_session_finishes_them),
+        TEST_CASE(an_unknown_count_syncs_until_the_first_session),
+        TEST_CASE(a_damaged_state_file_reads_as_unknown),
         TEST_CASE(playing_music_never_fills_covers),
         TEST_CASE(the_screen_going_dark_on_its_own_after_a_long_pause_starts_at_once),
         TEST_CASE(a_lit_screen_waits),

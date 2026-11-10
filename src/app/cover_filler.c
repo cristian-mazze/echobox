@@ -3,6 +3,7 @@
 #include <stddef.h>
 
 #include "cover_fill_policy.h"
+#include "cover_state_store.h"
 #include "hal/clock.h"
 #include "hal/input.h"
 #include "hal/power.h"
@@ -31,7 +32,9 @@ void cover_filler_start(CoverFiller *filler, uint32_t now_ms)
 {
     cover_queue_init(&filler->queue);
     filler->quiet_since_ms = now_ms;
-    filler->complete = false;
+    filler->pending = cover_state_store_pending();
+    filler->stalled = false;
+    filler->complete = filler->pending == 0;
     filler->queue_restored = false;
     filler->has_playing_album = false;
     filler->has_seen_track = false;
@@ -91,6 +94,11 @@ bool cover_filler_due(const CoverFiller *filler, CoverFillerWorld world, uint32_
                                       .rescan_waiting = world.rescan_waiting,
                                       .work_left = !filler->complete};
     return cover_fill_ready(&conditions, now_ms);
+}
+
+bool cover_filler_syncing(const CoverFiller *filler)
+{
+    return filler->pending > 0 && !filler->stalled;
 }
 
 static bool power_changed(const CoverFillerLinks *links)
@@ -179,6 +187,9 @@ static void settle(CoverFiller *filler, const CoverFillerLinks *links, CoverFill
         cover_cache_refresh(links->covers);
     }
     prune_queue(filler, links);
+    bool counted = outcome.result == SCAN_OK || outcome.result == SCAN_CANCELLED;
+    filler->pending = counted ? outcome.stats.pending : filler->pending;
+    filler->stalled = !counted;
     if (outcome.result == SCAN_CANCELLED) {
         filler->quiet_since_ms = hal_clock_milliseconds();
         return;
