@@ -15,6 +15,24 @@ static const KeyName KEY_NAMES[] = {
 
 static const char LONG_SUFFIX[] = ":long";
 static const char HELD_SUFFIX[] = ":held";
+static const char WAIT_PREFIX[] = "wait:";
+
+static bool parse_wait(const char *start, size_t length, SimScriptStep *step)
+{
+    size_t prefix_length = strlen(WAIT_PREFIX);
+    if (length <= prefix_length || strncmp(start, WAIT_PREFIX, prefix_length) != 0) {
+        return false;
+    }
+    uint32_t seconds = 0;
+    for (size_t index = prefix_length; index < length; index++) {
+        if (start[index] < '0' || start[index] > '9' || seconds > SIM_SCRIPT_MAX_WAIT_SECONDS) {
+            return false;
+        }
+        seconds = seconds * 10 + (uint32_t)(start[index] - '0');
+    }
+    *step = (SimScriptStep){.wait_frames = seconds * 1000 / SIM_SCRIPT_FRAME_MS};
+    return seconds > 0 && seconds <= SIM_SCRIPT_MAX_WAIT_SECONDS;
+}
 
 static bool has_suffix(const char *start, size_t length, const char *suffix)
 {
@@ -23,7 +41,7 @@ static bool has_suffix(const char *start, size_t length, const char *suffix)
            strncmp(start + length - suffix_length, suffix, suffix_length) == 0;
 }
 
-static bool parse_step(const char *start, size_t length, SimScriptStep *step)
+static bool parse_key(const char *start, size_t length, SimScriptStep *step)
 {
     bool long_press = has_suffix(start, length, LONG_SUFFIX);
     bool held = has_suffix(start, length, HELD_SUFFIX);
@@ -37,6 +55,11 @@ static bool parse_step(const char *start, size_t length, SimScriptStep *step)
         }
     }
     return false;
+}
+
+static bool parse_step(const char *start, size_t length, SimScriptStep *step)
+{
+    return parse_wait(start, length, step) || parse_key(start, length, step);
 }
 
 bool sim_script_parse(const char *text, SimScript *script)
@@ -64,6 +87,10 @@ int sim_script_schedule(const SimScript *script, uint32_t first_frame, SimScript
     uint32_t frame = first_frame;
     for (int index = 0; index < script->count; index++) {
         const SimScriptStep *step = &script->steps[index];
+        if (step->wait_frames > 0) {
+            frame += step->wait_frames;
+            continue;
+        }
         uint32_t hold = step->held         ? SIM_SCRIPT_HELD_FRAMES
                         : step->long_press ? SIM_SCRIPT_HOLD_FRAMES
                                            : SIM_SCRIPT_TAP_FRAMES;

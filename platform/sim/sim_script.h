@@ -11,13 +11,16 @@ enum {
     SIM_SCRIPT_TAP_FRAMES = 2,
     SIM_SCRIPT_HOLD_FRAMES = 70,
     SIM_SCRIPT_HELD_FRAMES = 300,
-    SIM_SCRIPT_GAP_FRAMES = 8
+    SIM_SCRIPT_GAP_FRAMES = 8,
+    SIM_SCRIPT_FRAME_MS = 16,
+    SIM_SCRIPT_MAX_WAIT_SECONDS = 3600
 };
 
 typedef struct SimScriptStep {
     Key key;
     bool long_press;
     bool held;
+    uint32_t wait_frames;
 } SimScriptStep;
 
 typedef struct SimScript {

@@ -97,7 +97,7 @@ Nothing else on the card needs a computer. Covers come from art embedded in each
 | `--system-dir DIR` | Read and write `/.echo/` (library database, resume, settings, favorites) in DIR |
 | `--battery N` | Report N % battery in the header (default 80) |
 | `--charging` | Report the battery as charging |
-| `--keys LIST` | Play a key script, e.g. `down,down,play,back:long` (`up`, `down`, `play`, `menu`, `back`, `power`, each optionally `:long`) |
+| `--keys LIST` | Play a key script, e.g. `down,down,play,back:long` (`up`, `down`, `play`, `menu`, `back`, `power`, each optionally `:long` or `:held`; `wait:S` lets S seconds pass) |
 
 Headless runs use a virtual clock, so scripted screenshots are deterministic.
 

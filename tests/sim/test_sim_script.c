@@ -81,6 +81,27 @@ static void a_held_suffix_holds_for_seconds(void)
     CHECK_EQUAL(SIM_SCRIPT_HELD_FRAMES, events[1].frame);
 }
 
+static void a_wait_step_moves_the_next_key_later(void)
+{
+    SimScript script;
+    CHECK(sim_script_parse("play,wait:2,power", &script));
+    CHECK_EQUAL(3, script.count);
+    SimScriptEvent events[SIM_SCRIPT_MAX_EVENTS];
+    CHECK_EQUAL(4, sim_script_schedule(&script, 0, events));
+    uint32_t after_tap = SIM_SCRIPT_TAP_FRAMES + SIM_SCRIPT_GAP_FRAMES;
+    CHECK_EQUAL(after_tap + 2000 / SIM_SCRIPT_FRAME_MS, events[2].frame);
+    CHECK_EQUAL(KEY_POWER, events[2].key);
+}
+
+static void bad_waits_are_rejected(void)
+{
+    SimScript script;
+    CHECK(!sim_script_parse("wait:", &script));
+    CHECK(!sim_script_parse("wait:0", &script));
+    CHECK(!sim_script_parse("wait:2s", &script));
+    CHECK(!sim_script_parse("wait:99999", &script));
+}
+
 int main(void)
 {
     static const TestCase cases[] = {
@@ -91,6 +112,8 @@ int main(void)
         TEST_CASE(too_many_steps_are_rejected),
         TEST_CASE(taps_press_and_release_then_leave_a_gap),
         TEST_CASE(long_presses_hold_for_the_hold_time),
+        TEST_CASE(a_wait_step_moves_the_next_key_later),
+        TEST_CASE(bad_waits_are_rejected),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));
 }

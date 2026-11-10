@@ -18,7 +18,7 @@
 
 enum {
     EXIT_USAGE = 2,
-    FRAME_PERIOD_MS = 16,
+    FRAME_PERIOD_MS = SIM_SCRIPT_FRAME_MS,
     VIRTUAL_START_MS = 1000,
     SPLASH_FRAMES = 70,
     FIRST_SCRIPTED_FRAME = SPLASH_FRAMES + 1,
@@ -39,7 +39,7 @@ static const double MICROSECONDS_PER_MILLISECOND = 1000.0;
 static void print_usage(void)
 {
     fputs("usage: echo_sim [--scale N] [--frames N] [--headless] [--screenshot FILE.bmp]\n"
-          "                [--keys up,down,play,menu,back,power[:long],...]\n"
+          "                [--keys up,down,play,menu,back,power[:long],wait:S,...]\n"
           "                [--card MUSIC_DIR] [--system-dir DIR_WITH_LIBRARY_DB]\n"
           "                [--battery PERCENT] [--charging]\n",
           stderr);
