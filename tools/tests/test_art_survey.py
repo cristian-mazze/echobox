@@ -38,6 +38,11 @@ def interlaced_png(width, height):
     return art_survey.PNG_SIGNATURE + png_chunk(b"IHDR", header) + png_chunk(b"IEND", b"")
 
 
+def separate_scans(data):
+    start = data.index(bytes([0xFF, 0xDA]))
+    return data[:start + 4] + bytes([1]) + data[start + 5:]
+
+
 def lossless_jpeg():
     frame = b"\xff\xc3" + struct.pack(">HBHHB", 11, 8, 30, 40, 1) + b"\x01\x11\x00"
     return b"\xff\xd8" + frame + b"\xff\xd9"
@@ -49,6 +54,12 @@ class ArtFactsTest(unittest.TestCase):
         self.assertEqual(art_survey.JPEG_BASELINE, facts.kind)
         self.assertEqual((40, 30), (facts.width, facts.height))
         self.assertEqual("2x2,1x1,1x1", facts.sampling)
+
+    def test_a_baseline_jpeg_with_one_scan_per_component_is_not_interleaved(self):
+        self.assertTrue(art_survey.art_facts(jpeg_bytes()).interleaved)
+        facts = art_survey.art_facts(separate_scans(jpeg_bytes()))
+        self.assertEqual(art_survey.JPEG_BASELINE, facts.kind)
+        self.assertFalse(facts.interleaved)
 
     def test_a_progressive_jpeg_is_told_apart(self):
         facts = art_survey.art_facts(jpeg_bytes(progressive=True))
@@ -77,6 +88,8 @@ class ArtFactsTest(unittest.TestCase):
 class EligibleTest(unittest.TestCase):
     def test_baseline_jpegs_and_narrow_pngs_can_load_while_playing(self):
         self.assertTrue(art_survey.eligible(art_survey.ArtFacts(art_survey.JPEG_BASELINE), 0))
+        separate = art_survey.ArtFacts(art_survey.JPEG_BASELINE, interleaved=False)
+        self.assertFalse(art_survey.eligible(separate, 0))
         png = art_survey.ArtFacts(art_survey.PNG_PLAIN, row_bytes=8192)
         self.assertTrue(art_survey.eligible(png, 8192))
         self.assertFalse(art_survey.eligible(png, 8191))

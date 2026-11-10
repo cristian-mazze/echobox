@@ -36,6 +36,7 @@ class ArtFacts:
     height: int = 0
     sampling: str = ""
     row_bytes: int = 0
+    interleaved: bool = True
 
 
 @dataclass
@@ -60,14 +61,25 @@ def png_facts(data):
     return ArtFacts(kind, width, height, row_bytes=row_bytes)
 
 
+def first_scan_components(data, offset):
+    while True:
+        marker, offset = next_marker(data, offset)
+        if marker is None or offset + 3 > len(data):
+            return 0
+        if marker == JPEG_START_OF_SCAN:
+            return data[offset + 2]
+        if marker not in JPEG_STANDALONE:
+            offset += struct.unpack_from(">H", data, offset)[0]
+
+
 def jpeg_frame(data, offset, kind):
     if offset + 8 > len(data):
         return ArtFacts(UNSUPPORTED)
-    height, width = struct.unpack_from(">HH", data, offset + 3)
-    count = data[offset + 7]
+    length, _, height, width, count = struct.unpack_from(">HBHHB", data, offset)
     factors = data[offset + 8:offset + 8 + count * 3]
     sampling = ",".join(f"{byte >> 4}x{byte & 15}" for byte in factors[1::3])
-    return ArtFacts(kind, width, height, sampling)
+    interleaved = first_scan_components(data, offset + length) == count
+    return ArtFacts(kind, width, height, sampling, interleaved=interleaved)
 
 
 def frame_kind(marker):
@@ -112,7 +124,7 @@ def art_facts(data):
 
 def eligible(facts, row_limit):
     if facts.kind == JPEG_BASELINE:
-        return True
+        return facts.interleaved
     return facts.kind == PNG_PLAIN and facts.row_bytes <= row_limit
 
 
@@ -156,6 +168,7 @@ def size_summary(albums):
 def summary(albums, row_limit):
     art = with_art(albums)
     kinds = {kind: sum(1 for album in art if album.facts.kind == kind) for kind in KINDS}
+    separate = sum(1 for album in art if album.facts.kind == JPEG_BASELINE and not album.facts.interleaved)
     samplings = {}
     for album in art:
         if album.facts.kind == JPEG_BASELINE:
@@ -165,6 +178,7 @@ def summary(albums, row_limit):
         "with_art": len(art),
         "kinds": kinds,
         "jpeg_sampling": samplings,
+        "jpeg_separate_scans": separate,
         "bytes": size_summary(art),
         "png_row_limit": row_limit,
         "eligible": eligible_count(art, row_limit),
@@ -180,6 +194,7 @@ def table_lines(result):
         lines.append(f"  {kind:<17} {count:>6}  {share(count, total):5.1f} %")
     for sampling, count in sorted(result["jpeg_sampling"].items(), key=lambda item: -item[1]):
         lines.append(f"  baseline {sampling or '?':<9}{count:>6}")
+    lines.append(f"  baseline with one scan per component: {result['jpeg_separate_scans']}")
     lines.append(f"  art bytes: median {result['bytes']['median']:,}, max {result['bytes']['max']:,}")
     for limit, count in result["eligible_by_row_limit"].items():
         lines.append(f"  eligible with PNG rows <= {int(limit):,} B: {count} ({share(count, total)} %)")
