@@ -3,6 +3,7 @@
 #include <stddef.h>
 
 #include "cover_fill_policy.h"
+#include "cover_filler_play.h"
 #include "cover_state_store.h"
 #include "hal/clock.h"
 #include "hal/input.h"
@@ -20,6 +21,7 @@ typedef struct FillMode {
     StopCheck check;
     bool manual;
     void (*progress)(uint32_t done, uint32_t total);
+    PlaySession *play;
 } FillMode;
 
 typedef struct FillSession {
@@ -41,6 +43,7 @@ void cover_filler_start(CoverFiller *filler, uint32_t now_ms)
     filler->polled_us = 0;
     filler->stop = false;
     filler->sessions = 0;
+    cover_play_guard_init(&filler->guard);
 }
 
 static void follow_playing(CoverFiller *filler, const CoverFillerLinks *links, uint32_t now_ms)
@@ -54,6 +57,7 @@ static void follow_playing(CoverFiller *filler, const CoverFillerLinks *links, u
         return;
     }
     filler->has_seen_track = true;
+    cover_play_track_changed(&filler->guard);
     filler->seen_track = status.track;
     if (library_read_track(links->library, status.track, &track)) {
         filler->has_playing_album = true;
@@ -74,6 +78,7 @@ static void follow_misses(CoverFiller *filler, const CoverFillerLinks *links)
 void cover_filler_follow(CoverFiller *filler, const CoverFillerLinks *links, uint32_t now_ms)
 {
     follow_playing(filler, links, now_ms);
+    cover_filler_play_observe(&filler->guard);
     follow_misses(filler, links);
 }
 
@@ -95,6 +100,21 @@ bool cover_filler_due(const CoverFiller *filler, CoverFillerWorld world, uint32_
                                       .rescan_waiting = world.rescan_waiting,
                                       .work_left = !filler->complete};
     return cover_fill_ready(&conditions, now_ms);
+}
+
+bool cover_filler_play_due(const CoverFiller *filler, CoverFillerWorld world)
+{
+    HalBattery battery = hal_power_battery();
+    CoverFillConditions conditions = {.enabled = world.while_playing,
+                                      .playing = cover_filler_play_playing(),
+                                      .display_on = world.display_on,
+                                      .usb_power = battery.usb_power,
+                                      .battery_known = battery.known,
+                                      .battery_percent = battery.percent,
+                                      .restart_pending = hal_system_restart_pending(),
+                                      .rescan_waiting = world.rescan_waiting,
+                                      .work_left = !filler->complete};
+    return !filler->guard.disabled && cover_fill_play_ready(&conditions);
 }
 
 bool cover_filler_syncing(const CoverFiller *filler)
@@ -211,7 +231,23 @@ static CoverFillRequest request_for(CoverFiller *filler, FillMode mode, FillSess
         .restart_when_done = mode.manual,
         .capacity = library_rescan_covers_capacity(),
         .progress = mode.progress,
+        .play = mode.play != NULL ? &mode.play->play : NULL,
     };
+}
+
+static void link_play(FillMode mode, FillSession *session)
+{
+    if (mode.play != NULL) {
+        mode.play->stop = (CoverPoll){session_stopped, session};
+    }
+}
+
+static bool play_unusable(CoverFiller *filler, CoverFillOutcome outcome)
+{
+    bool no_room = outcome.result == SCAN_NO_SCRATCH || outcome.result == SCAN_NO_CODE;
+    bool deferred = outcome.stats.deferred > 0;
+    filler->guard.disabled = filler->guard.disabled || no_room || deferred;
+    return no_room;
 }
 
 static CoverFillOutcome fill(CoverFiller *filler, const CoverFillerLinks *links, FillMode mode)
@@ -225,7 +261,11 @@ static CoverFillOutcome fill(CoverFiller *filler, const CoverFillerLinks *links,
     filler->stop = false;
     filler->polled_us = hal_clock_microseconds() - COVER_FILLER_POLL_US;
     filler->sessions++;
+    link_play(mode, &session);
     CoverFillOutcome outcome = library_rescan_fill(&request);
+    if (mode.play != NULL && play_unusable(filler, outcome)) {
+        return outcome;
+    }
     restore_queue(filler, links, restored, restored_count);
     settle(filler, links, outcome);
     return outcome;
@@ -238,6 +278,23 @@ CoverFillOutcome cover_filler_run_idle(CoverFiller *filler, const CoverFillerLin
                      .manual = false,
                      .progress = NULL};
     return fill(filler, links, mode);
+}
+
+CoverFillOutcome cover_filler_run_playing(CoverFiller *filler, const CoverFillerLinks *links)
+{
+    PlaySession session;
+    CoverFillOutcome refused = {.result = SCAN_CANCELLED, .stats = {0}};
+    if (!cover_filler_play_open(&session, &filler->guard)) {
+        return refused;
+    }
+    FillMode mode = {.budget = {0, COVER_FILL_SESSION_ALBUMS},
+                     .check = idle_interrupted,
+                     .manual = false,
+                     .progress = NULL,
+                     .play = &session};
+    CoverFillOutcome outcome = fill(filler, links, mode);
+    cover_filler_play_close(&session);
+    return outcome;
 }
 
 CoverFillOutcome cover_filler_run_all(CoverFiller *filler, const CoverFillerLinks *links,

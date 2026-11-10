@@ -37,8 +37,13 @@ add_library(echo_app STATIC
     screens/stopwatch_screen.c
     screens/test_pattern_screen.c
 )
+if(CMAKE_CROSSCOMPILING)
+    target_sources(echo_app PRIVATE cover_filler_play_off.c)
+else()
+    target_sources(echo_app PRIVATE cover_filler_play.c)
+endif()
 target_include_directories(echo_app PUBLIC include PRIVATE .)
 target_link_libraries(echo_app
-    PUBLIC echo_core echo_gfx echo_ui echo_fonts echo_library echo_playback echo_settings echo_sound echo_hal
+    PUBLIC echo_core echo_image echo_gfx echo_ui echo_fonts echo_library echo_playback echo_settings echo_sound echo_hal
     PRIVATE echo_options echo_compact
 )

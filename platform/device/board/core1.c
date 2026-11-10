@@ -333,6 +333,16 @@ void *hal_system_borrow_scratch(uint32_t *size)
     return (void *)(uintptr_t)CORE1_CODE_BASE;
 }
 
+void *hal_system_borrow_play_memory(uint32_t *size)
+{
+    *size = 0;
+    return NULL;
+}
+
+void hal_system_return_play_memory(void)
+{
+}
+
 void hal_system_return_scratch(void)
 {
     if (lent) {

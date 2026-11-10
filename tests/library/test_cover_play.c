@@ -100,6 +100,7 @@ static CoverPlay make_play(CoverYield *yield, bool jpeg_only)
 {
     CoverPlay play = cover_play_make(yield, pace_permit, NULL);
     play.jpeg_only = jpeg_only;
+    play.place = cover_play_place;
     return play;
 }
 

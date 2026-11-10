@@ -5,6 +5,7 @@
 
 #include "core/power_policy.h"
 #include "cover_cache.h"
+#include "cover_play_policy.h"
 #include "cover_queue.h"
 #include "library/library.h"
 #include "library_rescan.h"
@@ -28,6 +29,7 @@ typedef struct CoverFiller {
     uint32_t sessions;
     uint32_t pending;
     bool stalled;
+    CoverPlayGuard guard;
 } CoverFiller;
 
 typedef struct CoverFillerLinks {
@@ -43,12 +45,15 @@ typedef struct CoverFillerWorld {
     bool enabled;
     bool display_on;
     bool rescan_waiting;
+    bool while_playing;
 } CoverFillerWorld;
 
 void cover_filler_start(CoverFiller *filler, uint32_t now_ms);
 void cover_filler_follow(CoverFiller *filler, const CoverFillerLinks *links, uint32_t now_ms);
 bool cover_filler_due(const CoverFiller *filler, CoverFillerWorld world, uint32_t now_ms);
+bool cover_filler_play_due(const CoverFiller *filler, CoverFillerWorld world);
 bool cover_filler_syncing(const CoverFiller *filler);
 CoverFillOutcome cover_filler_run_idle(CoverFiller *filler, const CoverFillerLinks *links);
+CoverFillOutcome cover_filler_run_playing(CoverFiller *filler, const CoverFillerLinks *links);
 CoverFillOutcome cover_filler_run_all(CoverFiller *filler, const CoverFillerLinks *links,
                                       void (*progress)(uint32_t done, uint32_t total));

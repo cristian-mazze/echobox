@@ -38,6 +38,8 @@ int fake_hal_presents_at_last_dir_open(void);
 int fake_hal_library_writes(void);
 int fake_hal_covers_writes(void);
 int fake_hal_scratch_outstanding(void);
+int fake_hal_play_borrow_count(void);
+void fake_hal_set_audio_stats(HalAudioStats stats);
 int fake_hal_loop_bench_count(void);
 int fake_hal_core1_test_count(void);
 int fake_hal_core1_accel_count(void);

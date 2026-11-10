@@ -121,6 +121,31 @@ static void a_full_queue_forgets_its_oldest_discovery(void)
     CHECK_EQUAL(COVER_QUEUE_CAPACITY - 1, queue.count);
 }
 
+static void playing_covers_need_a_playing_dark_player_on_battery(void)
+{
+    CoverFillConditions conditions = ready_conditions();
+    conditions.playing = true;
+    CHECK(cover_fill_play_ready(&conditions));
+    conditions.playing = false;
+    CHECK(!cover_fill_play_ready(&conditions));
+}
+
+static void playing_covers_wait_for_the_same_things_as_paused_ones(void)
+{
+    CoverFillConditions conditions = ready_conditions();
+    conditions.playing = true;
+    conditions.display_on = true;
+    CHECK(!cover_fill_play_ready(&conditions));
+    conditions = ready_conditions();
+    conditions.playing = true;
+    conditions.usb_power = true;
+    CHECK(!cover_fill_play_ready(&conditions));
+    conditions = ready_conditions();
+    conditions.playing = true;
+    conditions.enabled = false;
+    CHECK(!cover_fill_play_ready(&conditions));
+}
+
 int main(void)
 {
     static const TestCase cases[] = {
@@ -133,6 +158,8 @@ int main(void)
         TEST_CASE(a_low_or_unknown_battery_is_not_ready),
         TEST_CASE(a_pending_restart_or_rescan_is_not_ready),
         TEST_CASE(nothing_left_to_fill_is_not_ready),
+        TEST_CASE(playing_covers_need_a_playing_dark_player_on_battery),
+        TEST_CASE(playing_covers_wait_for_the_same_things_as_paused_ones),
         TEST_CASE(the_newest_discovery_is_served_first_after_the_current_album),
         TEST_CASE(a_full_queue_forgets_its_oldest_discovery),
     };

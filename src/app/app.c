@@ -987,12 +987,29 @@ static void run_cover_scan(void)
     toast_show(&app.toast, text, hal_clock_milliseconds());
 }
 
-static void fill_covers_when_idle(uint32_t now_ms)
+static CoverFillerWorld filler_world(void)
 {
-    CoverFillerWorld world = {.enabled = background_covers_on(),
+    return (CoverFillerWorld){.enabled = background_covers_on(),
                               .display_on = app.display_on,
                               .rescan_waiting = app.rescan_requested || app.music_check_requested ||
-                                                app.cover_scan_requested};
+                                                app.cover_scan_requested,
+                              .while_playing = app.settings.settings.background_covers ==
+                                               BACKGROUND_COVERS_ALWAYS};
+}
+
+static void fill_covers_while_playing(void)
+{
+    CoverFillerWorld world = filler_world();
+    if (app.charging || app.saying_goodbye || !cover_filler_play_due(&app.filler, world)) {
+        return;
+    }
+    CoverFillerLinks links = filler_links();
+    (void)cover_filler_run_playing(&app.filler, &links);
+}
+
+static void fill_covers_when_idle(uint32_t now_ms)
+{
+    CoverFillerWorld world = filler_world();
     if (app.charging || app.saying_goodbye || !cover_filler_due(&app.filler, world, now_ms)) {
         return;
     }
@@ -1128,6 +1145,7 @@ void app_step(void)
     if (!app.powered_off) {
         CoverFillerLinks links = filler_links();
         cover_filler_follow(&app.filler, &links, now_ms);
+        fill_covers_while_playing();
         fill_covers_when_idle(now_ms);
     }
     if (app.powered_off) {

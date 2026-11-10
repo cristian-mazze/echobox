@@ -9,6 +9,7 @@
 #include "hal/clock.h"
 #include "hal/storage.h"
 #include "hal/system.h"
+#include "library/cover_play.h"
 #include "library/cover_state.h"
 #include "library/library.h"
 #include "library_store.h"
@@ -403,13 +404,43 @@ static void prepare_state(RescanFiles *files, uint8_t *state, const CoverFillReq
     }
 }
 
+static uint8_t *borrow_fill_memory(const CoverFillRequest *request, uint32_t *size)
+{
+    return request->play != NULL ? hal_system_borrow_play_memory(size)
+                                 : hal_system_borrow_scratch(size);
+}
+
+static void return_fill_memory(const CoverFillRequest *request)
+{
+    if (request->play != NULL) {
+        hal_system_return_play_memory();
+    } else {
+        hal_system_return_scratch();
+    }
+}
+
+static bool entry_can_play(const LibraryScanEntry *entry, const CoverFillRequest *request)
+{
+    return request->play == NULL || entry->play_place != NULL;
+}
+
+static CoverPlay play_with(const CoverPlay *play, const LibraryScanEntry *entry)
+{
+    CoverPlay copy = play != NULL ? *play : (CoverPlay){0};
+    copy.place = entry->play_place;
+    return copy;
+}
+
 static ScanResult fill_in(const LibraryScanEntry *entry, RescanFiles *files,
                           const CoverFillRequest *request, CoverStats *stats)
 {
     uint32_t size = 0;
-    uint8_t *memory = hal_system_borrow_scratch(&size);
+    if (!entry_can_play(entry, request)) {
+        return SCAN_NO_CODE;
+    }
+    uint8_t *memory = borrow_fill_memory(request, &size);
     if (memory == NULL || size <= STATE_ROOM) {
-        hal_system_return_scratch();
+        return_fill_memory(request);
         return SCAN_NO_SCRATCH;
     }
     prepare_state(files, memory, request);
@@ -424,12 +455,14 @@ static ScanResult fill_in(const LibraryScanEntry *entry, RescanFiles *files,
                       .priority_count = request->priority_count,
                       .state = memory,
                       .poll = request->poll};
+    CoverPlay play = play_with(request->play, entry);
+    plan.play = request->play != NULL ? &play : NULL;
     ScanResult result = entry->fill(&job, &plan, stats);
     (void)cover_state_store_save(memory);
     if (previous) {
         hal_file_close(&files->covers);
     }
-    hal_system_return_scratch();
+    return_fill_memory(request);
     return result;
 }
 

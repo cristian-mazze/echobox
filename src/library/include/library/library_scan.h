@@ -80,6 +80,7 @@ typedef struct LibraryScanEntry {
                             struct CoverStats *stats);
     ScanResult (*fill)(const struct CoverJob *job, const struct CoverPlan *plan,
                        struct CoverStats *stats);
+    int (*play_place)(void *state, const struct CoverJob *job, const void *art);
 } LibraryScanEntry;
 
 extern const LibraryScanEntry LIBRARY_SCAN_ENTRY;

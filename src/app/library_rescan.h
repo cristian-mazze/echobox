@@ -39,6 +39,8 @@ typedef struct CoverRestoredKeys {
     uint32_t *count;
 } CoverRestoredKeys;
 
+struct CoverPlay;
+
 typedef struct CoverFillRequest {
     const uint16_t *priority;
     uint32_t priority_count;
@@ -49,6 +51,7 @@ typedef struct CoverFillRequest {
     bool restart_when_done;
     uint32_t capacity;
     void (*progress)(uint32_t done, uint32_t total);
+    const struct CoverPlay *play;
 } CoverFillRequest;
 
 typedef struct CoverFillOutcome {

@@ -163,6 +163,29 @@ static void playing_music_never_fills_covers(void)
     CHECK_EQUAL(0, fake_hal_borrows_while_playing());
 }
 
+static void a_full_buffer_lets_covers_fill_while_playing_without_the_paused_memory(void)
+{
+    start_with_library();
+    play_first_album_track();
+    fake_hal_audio_set_format((HalAudioFormat){.sample_rate = 44100});
+    fake_hal_set_audio_stats((HalAudioStats){.buffered_ms = 1000});
+    int scratch = fake_hal_scratch_borrow_count();
+    wait_ms(SCREEN_TIMEOUT_MS);
+    CHECK(!fake_hal_display_on());
+    CHECK_EQUAL(PLAYER_PLAYING, app_player_status().state);
+    CHECK(fake_hal_play_borrow_count() > 0);
+    CHECK_EQUAL(scratch, fake_hal_scratch_borrow_count());
+}
+
+static void an_empty_buffer_keeps_covers_from_filling_while_playing(void)
+{
+    start_with_library();
+    play_first_album_track();
+    fake_hal_audio_set_format((HalAudioFormat){.sample_rate = 44100});
+    wait_ms(SCREEN_TIMEOUT_MS);
+    CHECK_EQUAL(0, fake_hal_play_borrow_count());
+}
+
 static void a_lit_screen_waits(void)
 {
     start_with_library();
@@ -486,6 +509,8 @@ int main(void)
         TEST_CASE(background_covers_when_paused_fills_as_before),
         TEST_CASE(scanning_all_covers_still_works_with_background_covers_off),
         TEST_CASE(the_status_bar_shows_the_sync_icon_only_while_covers_wait),
+        TEST_CASE(a_full_buffer_lets_covers_fill_while_playing_without_the_paused_memory),
+        TEST_CASE(an_empty_buffer_keeps_covers_from_filling_while_playing),
         TEST_CASE(playing_music_never_fills_covers),
         TEST_CASE(the_screen_going_dark_on_its_own_after_a_long_pause_starts_at_once),
         TEST_CASE(a_lit_screen_waits),

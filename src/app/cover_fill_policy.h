@@ -24,3 +24,4 @@ typedef struct CoverFillConditions {
 } CoverFillConditions;
 
 bool cover_fill_ready(const CoverFillConditions *conditions, uint32_t now_ms);
+bool cover_fill_play_ready(const CoverFillConditions *conditions);

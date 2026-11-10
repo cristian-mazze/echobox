@@ -23,6 +23,7 @@ enum {
 
 typedef struct FakeAudio {
     HalAudioStatus status;
+    HalAudioStats stats;
     char playing_path[PATH_CAPACITY];
     uint32_t play_start_ms;
     int play_count;
@@ -104,6 +105,7 @@ typedef struct FakeHal {
     int covers_writes;
     const char *store_used[STORE_SLOTS];
     int scratch_outstanding;
+    int play_borrows;
     int presents_at_power_on;
     bool refuse_clock_switch;
     int test_tone_count;
@@ -594,9 +596,14 @@ void hal_audio_service(void)
     fake.audio_service_count++;
 }
 
+void fake_hal_set_audio_stats(HalAudioStats stats)
+{
+    fake.audio.stats = stats;
+}
+
 HalAudioStats hal_audio_stats(void)
 {
-    return (HalAudioStats){0};
+    return fake.audio.stats;
 }
 
 HalToneDetail hal_audio_tone_detail(void)
@@ -988,6 +995,23 @@ void hal_system_return_scratch(void)
     if (!fake.scratch_refused) {
         fake.scratch_outstanding--;
     }
+}
+
+void *hal_system_borrow_play_memory(uint32_t *size)
+{
+    static uint8_t memory[128 * 1024];
+    fake.play_borrows++;
+    *size = sizeof memory;
+    return memory;
+}
+
+void hal_system_return_play_memory(void)
+{
+}
+
+int fake_hal_play_borrow_count(void)
+{
+    return fake.play_borrows;
 }
 
 void *hal_system_borrow_listing(uint32_t *size)

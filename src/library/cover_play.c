@@ -88,11 +88,7 @@ static int place(CoverState *state, const CoverJob *job, const ArtFile *art)
                                                                  : PLACEMENT_FAILED;
 }
 
-CoverPlay cover_play_make(CoverYield *yield, bool (*may_write)(void *context), void *context)
+int cover_play_place(void *state, const CoverJob *job, const void *art)
 {
-    return (CoverPlay){.yield = yield,
-                       .may_write = may_write,
-                       .context = context,
-                       .jpeg_only = true,
-                       .place = place};
+    return place(state, job, art);
 }

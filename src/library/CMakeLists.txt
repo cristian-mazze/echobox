@@ -49,6 +49,9 @@ add_library(echo_library_scan STATIC
     track_tags.c
 )
 target_include_directories(echo_library_scan PUBLIC include)
+if(NOT CMAKE_CROSSCOMPILING)
+    target_compile_definitions(echo_library_scan PRIVATE ECHO_PLAY_FILL)
+endif()
 target_link_libraries(echo_library_scan
     PUBLIC echo_core echo_image echo_library
     PRIVATE echo_options

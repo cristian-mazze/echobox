@@ -70,6 +70,17 @@ void *hal_system_borrow_scratch(uint32_t *size)
     return scratch;
 }
 
+void *hal_system_borrow_play_memory(uint32_t *size)
+{
+    static uint8_t memory[128 * 1024];
+    *size = sizeof memory;
+    return memory;
+}
+
+void hal_system_return_play_memory(void)
+{
+}
+
 void *hal_system_borrow_listing(uint32_t *size)
 {
     static uint8_t listing[96 * 1024];

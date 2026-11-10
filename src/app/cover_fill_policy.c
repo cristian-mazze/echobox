@@ -17,3 +17,10 @@ bool cover_fill_ready(const CoverFillConditions *conditions, uint32_t now_ms)
            !conditions->display_on && power_allows(conditions) && !conditions->restart_pending &&
            !conditions->rescan_waiting;
 }
+
+bool cover_fill_play_ready(const CoverFillConditions *conditions)
+{
+    return conditions->enabled && conditions->work_left && conditions->playing &&
+           !conditions->display_on && power_allows(conditions) && !conditions->restart_pending &&
+           !conditions->rescan_waiting;
+}
