@@ -1102,7 +1102,7 @@ void app_step(void)
     if (!app.display_on) {
         use_wanted_clock();
     }
-    toast_update(&app.toast, now_ms);
+    toast_update(&app.toast, current_theme(), now_ms);
     update_screen(now_ms);
     frame_stats_record(&app.update_stats, hal_clock_microseconds() - started_us);
     if (app.display_on && frame_needed(now_ms)) {

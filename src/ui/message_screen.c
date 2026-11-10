@@ -5,10 +5,12 @@
 #include "ui/header.h"
 #include "ui/label.h"
 #include "ui/navigation.h"
+#include "ui/text_wrap.h"
 
 enum {
     MESSAGE_LINES = 4,
-    LINE_CAPACITY = 128,
+    DETAIL_LINES = 3,
+    DETAIL_GAP = 8,
     LINE_GAP = 2
 };
 
@@ -25,39 +27,33 @@ static void update(void *context, uint32_t now_ms)
     (void)now_ms;
 }
 
-static size_t word_end(const char *text, size_t from)
+typedef struct TextBlock {
+    char lines[MESSAGE_LINES][TEXT_WRAP_LINE_CAPACITY];
+    int count;
+    TextStyle style;
+} TextBlock;
+
+static void wrap_block(TextBlock *block, const char *text, int width, int max_lines)
 {
-    while (text[from] != '\0' && text[from] != ' ') {
-        from++;
-    }
-    return from;
+    block->count = text != NULL ? text_wrap_lines((TextWrap){block->style.font, width}, text,
+                                                  block->lines, max_lines)
+                                : 0;
 }
 
-static void copy_span(char *line, const char *text, size_t count)
+static int block_height(const TextBlock *block)
 {
-    size_t length = count < LINE_CAPACITY - 1 ? count : LINE_CAPACITY - 1;
-    for (size_t index = 0; index < length; index++) {
-        line[index] = text[index];
-    }
-    line[length] = '\0';
+    return block->count * (font_line_height(block->style.font) + LINE_GAP);
 }
 
-static size_t next_line(const Font *font, const char *text, int width, bool last, char *line)
+static int draw_block(Canvas *canvas, const TextBlock *block, Rect area)
 {
-    size_t fitted = word_end(text, 0);
-    while (text[fitted] == ' ') {
-        size_t end = word_end(text, fitted + 1);
-        copy_span(line, text, end);
-        if (!last && text_width(font, line) > width) {
-            break;
-        }
-        fitted = end;
+    int line_height = font_line_height(block->style.font) + LINE_GAP;
+    for (int index = 0; index < block->count; index++) {
+        Rect row = {area.x, area.y + index * line_height, area.width, line_height};
+        Rect place = label_centered_area(block->style.font, row, block->lines[index]);
+        label_draw(canvas, block->style, (Label){.area = place, .text = block->lines[index]});
     }
-    copy_span(line, text, fitted);
-    while (text[fitted] == ' ') {
-        fitted++;
-    }
-    return fitted;
+    return block_height(block);
 }
 
 static void draw(void *context, Canvas *canvas)
@@ -65,27 +61,18 @@ static void draw(void *context, Canvas *canvas)
     const MessageScreen *message = context;
     const Theme *theme = message->config.theme;
     Rect content = theme_content_area(theme);
-    TextStyle style = {.font = theme->fonts.body, .color = theme->colors.text_secondary};
+    TextBlock body = {.style = {.font = theme->fonts.body, .color = theme->colors.text_secondary}};
+    TextBlock detail = {.style = {.font = theme->fonts.body, .color = theme->colors.text_tertiary}};
+    int width = content.width - 2 * theme->metrics.padding;
     canvas_fill_rect(canvas, content, theme->colors.background);
     header_draw(canvas, theme, message->config.title);
-    int padding = theme->metrics.padding;
-    int width = content.width - 2 * padding;
-    char lines[MESSAGE_LINES][LINE_CAPACITY];
-    int count = 0;
-    const char *rest = message->config.message;
-    bool fits = text_width(style.font, rest) <= width;
-    while (*rest != '\0' && count < MESSAGE_LINES) {
-        rest +=
-            next_line(style.font, rest, width, fits || count == MESSAGE_LINES - 1, lines[count]);
-        count++;
-    }
-    int line_height = font_line_height(style.font) + LINE_GAP;
-    int top = content.y + (content.height - count * line_height) / 2;
-    for (int index = 0; index < count; index++) {
-        Rect row = {content.x + padding, top + index * line_height, width, line_height};
-        Rect area = label_centered_area(style.font, row, lines[index]);
-        label_draw(canvas, style, (Label){.area = area, .text = lines[index]});
-    }
+    wrap_block(&body, message->config.message, width, MESSAGE_LINES);
+    wrap_block(&detail, message->config.detail, width, DETAIL_LINES);
+    int gap = detail.count > 0 ? DETAIL_GAP : 0;
+    int top = content.y + (content.height - block_height(&body) - gap - block_height(&detail)) / 2;
+    Rect area = {content.x + theme->metrics.padding, top, width, 0};
+    area.y += draw_block(canvas, &body, area) + gap;
+    (void)draw_block(canvas, &detail, area);
 }
 
 Screen *message_screen_init(MessageScreen *message, MessageConfig config)

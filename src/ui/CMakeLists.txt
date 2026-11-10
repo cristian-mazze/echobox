@@ -15,6 +15,7 @@ add_library(echo_ui STATIC
     screen.c
     screen_stack.c
     status_bar.c
+    text_wrap.c
     theme.c
     toast.c
 )

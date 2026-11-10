@@ -6,6 +6,7 @@
 typedef struct MessageConfig {
     const char *title;
     const char *message;
+    const char *detail;
     const Theme *theme;
 } MessageConfig;
 

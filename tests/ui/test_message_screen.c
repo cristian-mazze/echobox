@@ -68,6 +68,30 @@ static void a_message_too_wide_for_the_screen_wraps_onto_more_lines(void)
     CHECK(last - first >= font_line_height(TEST_THEME.fonts.body));
 }
 
+static void a_detail_is_drawn_below_the_message_in_the_tertiary_color(void)
+{
+    MessageConfig config = {.title = "Note", .message = "AB", .detail = "AB", .theme = &TEST_THEME};
+    Screen *screen = message_screen_init(&message, config);
+    Canvas canvas = ui_test_canvas();
+    screen->draw(screen->context, &canvas);
+    Rect content = theme_content_area(&TEST_THEME);
+    int message_y = -1;
+    int detail_y = -1;
+    for (int y = content.y; y < content.y + content.height; y++) {
+        Rect row = {content.x, y, content.width, 1};
+        message_y =
+            message_y < 0 && ui_test_area_has_color(&canvas, row, TEST_THEME.colors.text_secondary)
+                ? y
+                : message_y;
+        detail_y =
+            detail_y < 0 && ui_test_area_has_color(&canvas, row, TEST_THEME.colors.text_tertiary)
+                ? y
+                : detail_y;
+    }
+    CHECK(message_y >= 0);
+    CHECK(detail_y > message_y);
+}
+
 int main(void)
 {
     static const TestCase cases[] = {
@@ -76,6 +100,7 @@ int main(void)
         TEST_CASE(other_keys_do_nothing),
         TEST_CASE(the_message_is_drawn_below_the_header),
         TEST_CASE(a_message_too_wide_for_the_screen_wraps_onto_more_lines),
+        TEST_CASE(a_detail_is_drawn_below_the_message_in_the_tertiary_color),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));
 }
