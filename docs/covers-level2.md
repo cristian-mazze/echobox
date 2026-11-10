@@ -194,3 +194,39 @@ Changes this implies for phase 3:
 ### What phase 1 does not do
 
 Phase 1 adds no yield hook (phase 2), no borrowed memory or overlay (phase 3), and no change to when covers fill (phase 4). The level 1 code keeps its current behavior.
+
+## Phase 2: yield hook
+
+Phase 2 lets `cover_image_decode_rows` give the caller a turn at least every `slice_ms` (4 ms by default), without a second stack. The caller is expected to run the audio service from that callback.
+
+### What was built
+
+- `CoverYield` (`image/cover_yield.h`): a clock, a `service` callback, `slice_ms`, and the longest stretch seen. `cover_yield_point` does nothing for a null hook, and otherwise calls `service` only after `slice_ms` have passed. A `service` that returns false cancels the decode for good.
+- `cover_image_decode_rows` takes a `CoverRowsRequest` (source, memory, sink, optional yield). A refusal makes it return `COVER_IMAGE_CANCELLED`, whichever decoder noticed it first.
+- Yield points: after every JPEG MCU (every block for single component scans), after every 4 KB card read, after every PNG row, after each rendered row of the rolling grid, and after each of the 2 to 6 steps that prepare the per channel totals. The totals are no longer one block at the first `reach`.
+- The level 1 path passes no hook. The null check is inline, so it costs a compare per point.
+
+### Proof
+
+`check_cover_decode.py` runs every image with a fake clock that ticks once per reading (`--rolling --yield 3 0`) and requires the same bytes as the full grid. It also refuses service at the 20th yield (`--yield 1 20`) and requires `cancelled` for every image the rolling mode accepts. `test_cover_grid_rolling` repeats this on synthetic samples and also refuses during the totals, before any row is sent. `test_cover_yield` covers the hook alone.
+
+### Longest stretch without a yield point
+
+`cover_decode_tool --rolling --gaps IMAGE` reads a microsecond wall clock at every point. Best of nine runs on the host, with the sanitizers of the `dev` preset. The device is about 40 times slower, so the last column is only an estimate.
+
+| Image | Yield points | Longest stretch | Device estimate |
+|---|---|---|---|
+| JPEG 4:2:0 600 x 600 | 1,571 | 95 us | 3.8 ms |
+| JPEG 4:4:4 300 x 200 | 1,071 | 77 us | 3.1 ms |
+| JPEG gray 500 x 400 | 2,996 | 64 us | 2.6 ms |
+| JPEG 4:2:2 480 x 480, restart interval | 1,927 | 91 us | 3.6 ms |
+| JPEG 4:4:4 160 x 160 (scale 1/1) | 521 | 114 us | 4.6 ms |
+| JPEG 4:4:4 1000 x 1000 (scale 1/8) | 15,765 | 80 us | 3.2 ms |
+| JPEG 4:4:4 1800 x 1200 | 8,626 | 80 us | 3.2 ms |
+| PNG RGB 400 x 300 | 329 | 423 us | 17 ms |
+| PNG RGB 500 x 500 | 510 | 399 us | 16 ms |
+
+- Every baseline JPEG stays under the 10 ms ceiling and mostly under the 5 ms target. The stretch comes from one MCU, one rendered row, or the header, and it was not attributed further. The device bench in phase 4 has the final say.
+- PNG stays above the ceiling because a row of inflate runs between two points, as phase 0 found. It remains paused only until inflate gets its own yield points.
+- Sizes after phase 2: main code window 151,916 of 157,292 B, code plus `.data` and `.bss` 436,900 of 437,600 B, rescan overlay 85,724 of 86,016 B (292 B spare). The overlay grew by 264 B since phase 1 for the hook calls in the decoders and the reader.
+- The yield callback runs on the decoder's stack. The 8,416 B peak of phase 0 has not changed, but the stack of the service it calls still has to be measured on top of that in phase 4.
