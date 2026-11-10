@@ -384,6 +384,11 @@ add_test(NAME no_comments
 
 find_program(CLANG_FORMAT clang-format)
 if(CLANG_FORMAT)
+    file(GLOB_RECURSE FORMATTED_SOURCES CONFIGURE_DEPENDS
+        ${PROJECT_SOURCE_DIR}/src/*.c ${PROJECT_SOURCE_DIR}/src/*.h
+        ${PROJECT_SOURCE_DIR}/platform/*.c ${PROJECT_SOURCE_DIR}/platform/*.h
+        ${PROJECT_SOURCE_DIR}/tests/*.c ${PROJECT_SOURCE_DIR}/tests/*.h
+    )
     string(REPLACE ";" "\n" FORMATTED_SOURCES_LIST "${FORMATTED_SOURCES}")
     file(WRITE ${CMAKE_BINARY_DIR}/formatted_sources.txt "${FORMATTED_SOURCES_LIST}")
     add_test(NAME format COMMAND ${CLANG_FORMAT} --dry-run --Werror -style=file:${PROJECT_SOURCE_DIR}/.clang-format @${CMAKE_BINARY_DIR}/formatted_sources.txt)

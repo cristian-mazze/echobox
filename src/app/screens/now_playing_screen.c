@@ -365,9 +365,8 @@ static void load_texts(NowPlayingScreen *now_playing, uint16_t track_index)
 static Layout landscape_layout(const Theme *theme)
 {
     int size = theme->metrics.screen_height;
-    return (Layout){0,          0,         size,        size,
-                    TITLE_TOP,  DETAIL_TOP, MODES_TOP,
-                    PROGRESS_TOP, TIMES_TOP, false};
+    return (Layout){0,          0,         size,         size,      TITLE_TOP,
+                    DETAIL_TOP, MODES_TOP, PROGRESS_TOP, TIMES_TOP, false};
 }
 
 static int status_inset_of(const NowPlayingScreen *now_playing)
@@ -692,7 +691,8 @@ static void draw(void *context, Canvas *canvas)
 {
     const NowPlayingScreen *now_playing = context;
     const Theme *theme = now_playing->config.theme;
-    canvas_fill_rect(canvas, (Rect){0, 0, theme->metrics.screen_width, theme->metrics.screen_height},
+    canvas_fill_rect(canvas,
+                     (Rect){0, 0, theme->metrics.screen_width, theme->metrics.screen_height},
                      theme->colors.background);
     if (!now_playing->status.has_track) {
         draw_nothing_playing(theme, canvas);
