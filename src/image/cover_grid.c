@@ -224,14 +224,26 @@ static void axis_totals(uint32_t start, uint32_t span, uint32_t sample, uint32_t
     }
 }
 
-void cover_grid_prepare_render(CoverGrid *grid, CoverColor color)
+uint32_t cover_grid_prepare_steps(CoverColor color)
 {
-    uint32_t channels = color == COVER_COLOR_GRAY ? 1 : COVER_GRID_CHANNELS;
-    for (uint32_t channel = 0; channel < channels; channel++) {
+    return 2 * (color == COVER_COLOR_GRAY ? 1 : COVER_GRID_CHANNELS);
+}
+
+void cover_grid_prepare_step(CoverGrid *grid, uint32_t step)
+{
+    uint32_t channel = step / 2;
+    if (step % 2 == 0) {
         axis_totals(grid->start_x, grid->span, grid->sample_width[channel],
                     grid->totals_x[channel]);
-        axis_totals(grid->start_y, grid->span, grid->sample_height[channel],
-                    grid->totals_y[channel]);
+        return;
+    }
+    axis_totals(grid->start_y, grid->span, grid->sample_height[channel], grid->totals_y[channel]);
+}
+
+void cover_grid_prepare_render(CoverGrid *grid, CoverColor color)
+{
+    for (uint32_t step = 0; step < cover_grid_prepare_steps(color); step++) {
+        cover_grid_prepare_step(grid, step);
     }
 }
 

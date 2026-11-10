@@ -19,7 +19,7 @@ typedef struct CoverGridRolling {
     CoverRowSink sink;
     CoverYield *yield;
     uint32_t next_row;
-    bool prepared;
+    uint32_t prepared_steps;
     int32_t held[COVER_GRID_CHANNELS][COVER_GRID_SIZE];
 } CoverGridRolling;
 

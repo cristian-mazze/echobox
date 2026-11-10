@@ -74,16 +74,28 @@ static bool flush_row(CoverGridRolling *rolling, CoverColor color, uint32_t row)
     return accepted;
 }
 
+static bool prepare_totals(CoverGridRolling *rolling, CoverColor color)
+{
+    uint32_t steps = cover_grid_prepare_steps(color);
+    while (rolling->prepared_steps < steps) {
+        cover_grid_prepare_step(rolling->grid, rolling->prepared_steps);
+        rolling->prepared_steps++;
+        if (!cover_yield_point(rolling->yield)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool rolling_reach(CoverGrid *grid, uint32_t y, CoverColor color)
 {
     CoverGridRolling *rolling = grid->reach_context;
-    if (!rolling->prepared) {
-        cover_grid_prepare_render(grid, color);
-        rolling->prepared = true;
+    if (!prepare_totals(rolling, color)) {
+        return false;
     }
     uint32_t ready = rows_ready(grid, y);
     while (rolling->next_row < ready) {
-        if (!flush_row(rolling, color, rolling->next_row)) {
+        if (!flush_row(rolling, color, rolling->next_row) || !cover_yield_point(rolling->yield)) {
             return false;
         }
         rolling->next_row++;
@@ -104,6 +116,6 @@ CoverGrid *cover_grid_rolling_open(CoverGridRolling *rolling, ImageArena *arena,
     rolling->sink = sink;
     rolling->yield = NULL;
     rolling->next_row = 0;
-    rolling->prepared = false;
+    rolling->prepared_steps = 0;
     return grid;
 }

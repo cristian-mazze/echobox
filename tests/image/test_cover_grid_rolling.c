@@ -5,6 +5,7 @@
 #include "check.h"
 #include "image/cover_grid.h"
 #include "image/cover_grid_rolling.h"
+#include "image/cover_yield.h"
 
 enum {
     FULL = COVER_GRID_SIZE,
@@ -26,6 +27,37 @@ typedef struct Shape {
     uint32_t h[3];
     uint32_t v[3];
 } Shape;
+
+typedef struct Tick {
+    uint32_t now;
+    uint32_t services;
+    uint32_t cancel_at;
+} Tick;
+
+static Tick tick;
+static CoverYield *test_yield;
+
+static uint32_t tick_now(void *context)
+{
+    (void)context;
+    return tick.now++;
+}
+
+static bool tick_service(void *context)
+{
+    (void)context;
+    tick.services++;
+    return tick.cancel_at == 0 || tick.services < tick.cancel_at;
+}
+
+static CoverYield start_yield(uint32_t cancel_at)
+{
+    tick = (Tick){0, 0, cancel_at};
+    CoverYield yield = cover_yield_make(tick_now, tick_service, NULL);
+    yield.slice_ms = 1;
+    cover_yield_begin(&yield);
+    return yield;
+}
 
 static bool take_full(void *context, uint32_t y, const uint16_t *pixels)
 {
@@ -145,6 +177,7 @@ static CoverGrid *rolling_grid(CoverGridRolling *rolling, const Shape *shape, Co
     ImageArena arena = image_arena_make(*memory, size);
     CoverGrid *grid = cover_grid_rolling_open(rolling, &arena, sink);
     CHECK(grid != NULL);
+    rolling->yield = test_yield;
     CHECK(cover_grid_init(grid, shape->width, shape->height));
     return grid;
 }
@@ -226,6 +259,55 @@ static void the_sink_can_cancel_the_decode(void)
     free(rolling);
 }
 
+static void yielding_between_rows_keeps_the_output(void)
+{
+    CoverYield yield = start_yield(0);
+    test_yield = &yield;
+    compare(&(Shape){480, 480, {2, 1, 1}, {2, 1, 1}}, feed_jpeg_order, COVER_COLOR_YCBCR);
+    compare(&(Shape){300, 250, {1, 1, 1}, {1, 1, 1}}, feed_png_order, COVER_COLOR_RGB);
+    test_yield = NULL;
+    CHECK(tick.services > FULL);
+}
+
+static void a_refusal_while_preparing_the_totals_stops_before_any_row(void)
+{
+    static Collected collected;
+    uint8_t *memory = NULL;
+    Shape shape = {640, 480, {1, 1, 1}, {1, 1, 1}};
+    CoverGridRolling *rolling = malloc(sizeof *rolling);
+    CoverYield yield = start_yield(3);
+    test_yield = &yield;
+    memset(&collected, 0, sizeof collected);
+    collected.stop_after = UINT32_MAX;
+    CoverRowSink sink = {take_full, take_half, &collected};
+    CoverGrid *grid = rolling_grid(rolling, &shape, sink, &memory);
+    CHECK(!feed_png_order(grid, &shape));
+    CHECK_EQUAL(0, collected.full_rows);
+    CHECK(yield.cancelled);
+    test_yield = NULL;
+    free(memory);
+    free(rolling);
+}
+
+static void a_refusal_between_rows_stops_the_flush(void)
+{
+    static Collected collected;
+    uint8_t *memory = NULL;
+    Shape shape = {640, 480, {1, 1, 1}, {1, 1, 1}};
+    CoverGridRolling *rolling = malloc(sizeof *rolling);
+    CoverYield yield = start_yield(20);
+    test_yield = &yield;
+    memset(&collected, 0, sizeof collected);
+    collected.stop_after = UINT32_MAX;
+    CoverRowSink sink = {take_full, take_half, &collected};
+    CoverGrid *grid = rolling_grid(rolling, &shape, sink, &memory);
+    CHECK(!feed_png_order(grid, &shape));
+    CHECK(collected.full_rows > 0 && collected.full_rows < FULL);
+    test_yield = NULL;
+    free(memory);
+    free(rolling);
+}
+
 static void the_window_fits_only_what_nine_rows_can_cover(void)
 {
     CHECK(cover_grid_rolling_fits(112, 112, 8));
@@ -249,6 +331,9 @@ int main(void)
         TEST_CASE(off_centre_crops_match_the_full_grid),
         TEST_CASE(png_rows_match_the_full_grid),
         TEST_CASE(the_sink_can_cancel_the_decode),
+        TEST_CASE(yielding_between_rows_keeps_the_output),
+        TEST_CASE(a_refusal_while_preparing_the_totals_stops_before_any_row),
+        TEST_CASE(a_refusal_between_rows_stops_the_flush),
         TEST_CASE(the_window_fits_only_what_nine_rows_can_cover),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));
