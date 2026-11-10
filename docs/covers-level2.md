@@ -243,10 +243,23 @@ Phase 2 lets `cover_image_decode_rows` give the caller a turn at least every `sl
 
 `test_cover_play_policy` covers each rule. Nothing calls the policy yet.
 
+### The play fill path (library layer)
+
+`cover_fill` takes an optional `CoverPlan.play` (`library/cover_play.h`). Without it nothing changes. With it, each cover is decoded by `cover_image_decode_rows` and written straight into a free record slot:
+
+- `cover_record_writer` stages rows and writes them in chunks of 4,032 bytes (18 full rows or 36 half rows), full rows at the record start and half rows after them, byte for byte like `write_record`. Before each chunk it asks `may_write`, which the caller ties to `cover_play_may_write`; a refusal cancels the decode.
+- The index entry (`cover_index_add` or `cover_index_replace`) is written only after the whole record is on the card, so an interrupted cover is never indexed. A cover that already exists is replaced only when a free slot is left; otherwise it is deferred and the old one stays.
+- `CoverPlay.jpeg_only` (on by default in `cover_play_make`) turns PNG into `COVER_IMAGE_NEEDS_IDLE`. Anything the rolling decoder cannot take (progressive, non interleaved baseline, narrow crops) is deferred the same way: `CoverStats.deferred` counts it, the cursor stays on that album and `cover_fill` returns `SCAN_CANCELLED`, so the paused pass still finds it. Nothing is remembered as a failure.
+- A refusal from the `CoverYield` service also returns `SCAN_CANCELLED`, with no record indexed and no failure noted.
+- The writer lives in the decode memory, 8.1 KB on top of the 34.8 KB of a JPEG decode.
+- The hook is a function pointer in `CoverPlay`, so `cover_play.c`, the writer and the rolling decoder are not linked into the rescan overlay (85,796 of 86,016 B). The overlay for level 2 has to link them.
+
+`test_cover_play` checks, on the in-memory card: the covers written while playing are byte for byte the covers of the paused pass; every card write is 4 KB or less and each is gated; PNG is deferred with `jpeg_only` and the cursor stays; a refused service call and a denied write leave no cover and no failure, and a later pass finishes the library.
+
 ### What is still open
 
-Phase 3 and the rest of phase 4 need decisions and measurements that only the player can give, so they have not been started:
+The rest needs the player, so it has not been started:
 
-- **Where the decoder runs.** The level 1 session borrows core 1's RAM, which playback uses, so level 2 needs its own regions (`CoverImageMemory` is 34.8 KB for JPEG). Mapping it onto `GLYPH_RAM` (53,248 B, free while the screen is off) means loading code there on demand, as `board/overlay.c` does for the rescan, and checking that nothing draws text while it is loaded.
-- **A level 2 fill path.** `library_rescan_fill` finds the art through the tag readers and decodes with the whole grid. Level 2 needs the art location without the tag readers (the 22 KB estimate), a writer that stores each finished row of `covers.bin` in chunks of 4 KB or less, and a service callback that runs `hal_audio_service` and feeds `cover_play_policy`.
-- **Device measurements.** The stack of the audio service on top of the decoder's 8.4 KB, the real gap between services, and the size of the real overlay against the estimate.
+- **Where the decoder runs.** The level 1 session borrows core 1's RAM, which playback uses, so level 2 needs its own regions (about 43 KB for JPEG with the writer). Mapping them onto `GLYPH_RAM` (53,248 B, free while the screen is off) means loading code there on demand, as `board/overlay.c` does for the rescan, and checking that nothing draws text while it is loaded. The size of that overlay (cover pass, tag readers, rolling decoder, writer) against 53,248 B is still an estimate.
+- **The wiring in the app.** A session that builds the `CoverPlay` from `hal_audio_service`, `hal_audio_stats` and `cover_play_policy`, sets `slice_ms` from the audio tolerance, and starts only when `cover_play_may_start` allows it. It also needs the Background covers setting ("Always" today behaves as "When paused").
+- **Device measurements.** The stack of the audio service on top of the decoder's 8.4 KB, the real gap between services, and the real overlay size.

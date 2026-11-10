@@ -24,6 +24,8 @@ add_library(echo_library_scan STATIC
     cover_build.c
     cover_index.c
     cover_pass.c
+    cover_play.c
+    cover_record_writer.c
     library_builder.c
     library_builder_albums.c
     library_builder_encode.c
@@ -58,6 +60,8 @@ if(CMAKE_CROSSCOMPILING)
         cover_build.c
         cover_index.c
         cover_pass.c
+        cover_play.c
+        cover_record_writer.c
         library_scan.c
         PROPERTIES COMPILE_OPTIONS -Os
     )

@@ -5,6 +5,7 @@
 #include "core/hash.h"
 #include "cover_work.h"
 #include "image/cover_image.h"
+#include "library/cover_play.h"
 #include "library/cover_state.h"
 
 enum {
@@ -16,20 +17,6 @@ enum {
     ART_FILE = 2,
     BITS_PER_BYTE = 8
 };
-
-typedef struct ArtFile {
-    ByteSource source;
-    uint32_t offset;
-    uint32_t length;
-    uint32_t stamp;
-} ArtFile;
-
-typedef enum Placement {
-    PLACEMENT_DONE,
-    PLACEMENT_NO_ROOM,
-    PLACEMENT_UNDECODABLE,
-    PLACEMENT_FAILED
-} Placement;
 
 static uint32_t index_capacity(CoverLayout layout, uint32_t albums, uint32_t previous)
 {
@@ -389,6 +376,9 @@ static bool decode_art(CoverState *state, const ArtFile *art)
 
 static Placement decode_cover(CoverState *state, const CoverJob *job, const ArtFile *art)
 {
+    if (state->plan->play != NULL) {
+        return (Placement)state->plan->play->place(state, job, art);
+    }
     uint32_t position = 0;
     bool known = cover_index_find(&state->index, state->key, &position);
     if (!known && !cover_index_has_room(&state->index)) {
@@ -450,6 +440,10 @@ static ScanResult place_cover(CoverState *state, const CoverJob *job, const ArtF
     }
     if (placement == PLACEMENT_FAILED) {
         return SCAN_WRITE_FAILED;
+    }
+    if (placement == PLACEMENT_DEFERRED || placement == PLACEMENT_CANCELLED) {
+        stats->deferred += placement == PLACEMENT_DEFERRED ? 1u : 0u;
+        return SCAN_CANCELLED;
     }
     stats->overflow += placement == PLACEMENT_NO_ROOM ? 1u : 0u;
     stats->decoded += placement == PLACEMENT_DONE ? 1u : 0u;

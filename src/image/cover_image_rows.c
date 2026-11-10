@@ -16,7 +16,7 @@ CoverImageResult cover_image_decode_rows(const CoverRowsRequest *request)
         return COVER_IMAGE_NO_MEMORY;
     }
     rolling->yield = request->yield;
-    CoverImageRun run = {request->source, &arena, grid, request->yield};
+    CoverImageRun run = {request->source, &arena, grid, request->yield, request->jpeg_only};
     CoverImageResult result = cover_image_run(&run, &color);
     if (result == COVER_IMAGE_OK && !cover_grid_reach(grid, UINT32_MAX, color)) {
         result = COVER_IMAGE_CANCELLED;

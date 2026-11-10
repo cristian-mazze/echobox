@@ -23,6 +23,7 @@ typedef struct CoverImage {
     CoverGrid *grid;
     CoverColor color;
     CoverYield *yield;
+    bool jpeg_only;
 } CoverImage;
 
 CoverImageResult png_decode(ImageReader *reader, ImageArena *arena, CoverImage *image);
@@ -39,6 +40,7 @@ typedef struct CoverRowsRequest {
     CoverImageMemory memory;
     CoverRowSink sink;
     CoverYield *yield;
+    bool jpeg_only;
 } CoverRowsRequest;
 
 CoverImageResult cover_image_decode_rows(const CoverRowsRequest *request);

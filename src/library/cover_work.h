@@ -16,6 +16,22 @@ enum {
     COVER_WORK_NO_ALBUM = 0x7FFFFFFF
 };
 
+typedef struct ArtFile {
+    ByteSource source;
+    uint32_t offset;
+    uint32_t length;
+    uint32_t stamp;
+} ArtFile;
+
+typedef enum Placement {
+    PLACEMENT_DONE,
+    PLACEMENT_NO_ROOM,
+    PLACEMENT_UNDECODABLE,
+    PLACEMENT_FAILED,
+    PLACEMENT_DEFERRED,
+    PLACEMENT_CANCELLED
+} Placement;
+
 typedef enum ArtExpectation {
     ART_UNKNOWN,
     ART_ABSENT,

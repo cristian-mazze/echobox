@@ -96,7 +96,7 @@ echo_add_unit_test(NAME test_track_tags
     LIBRARIES echo_library_fixtures
 )
 target_compile_definitions(test_track_tags PRIVATE ECHO_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
-foreach(cover_test cover_build cover_build_large cover_fill)
+foreach(cover_test cover_build cover_build_large cover_fill cover_play)
     echo_add_unit_test(NAME test_${cover_test}
         SOURCES library/test_${cover_test}.c library/cover_png.c library/cover_card.c
         LIBRARIES echo_library_scan

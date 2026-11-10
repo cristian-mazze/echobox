@@ -19,6 +19,9 @@ static CoverImageResult decode_any(ImageReader *reader, ImageArena *arena, Cover
         return jpeg_decode(reader, arena, image);
     }
     if (first == PNG_FIRST && second == PNG_SECOND) {
+        if (image->jpeg_only) {
+            return COVER_IMAGE_NEEDS_IDLE;
+        }
         return png_decode(reader, arena, image);
     }
     return reader->failed ? COVER_IMAGE_CORRUPT : COVER_IMAGE_UNSUPPORTED;
@@ -27,7 +30,10 @@ static CoverImageResult decode_any(ImageReader *reader, ImageArena *arena, Cover
 CoverImageResult cover_image_run(const CoverImageRun *run, CoverColor *color)
 {
     ImageReader reader;
-    CoverImage image = {.grid = run->grid, .color = COVER_COLOR_GRAY, .yield = run->yield};
+    CoverImage image = {.grid = run->grid,
+                        .color = COVER_COLOR_GRAY,
+                        .yield = run->yield,
+                        .jpeg_only = run->jpeg_only};
     if (!image_reader_init(&reader, run->source, run->arena)) {
         return COVER_IMAGE_NO_MEMORY;
     }
@@ -53,7 +59,7 @@ CoverImageResult cover_image_decode(ImageSource source, void *memory, uint32_t s
         return COVER_IMAGE_NO_MEMORY;
     }
     cover_grid_begin(grid, COVER_GRID_SIZE);
-    CoverImageRun run = {source, &arena, grid, NULL};
+    CoverImageRun run = {source, &arena, grid, NULL, false};
     CoverImageResult result = cover_image_run(&run, &color);
     if (result == COVER_IMAGE_OK) {
         cover_grid_render(grid, color, full, half);

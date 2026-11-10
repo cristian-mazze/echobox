@@ -49,6 +49,8 @@ typedef struct CoverPoll {
     void *context;
 } CoverPoll;
 
+struct CoverPlay;
+
 typedef struct CoverPlan {
     CoverBudget budget;
     CoverClock clock;
@@ -59,6 +61,7 @@ typedef struct CoverPlan {
     uint8_t *state;
     const bool *cancel;
     CoverPoll poll;
+    const struct CoverPlay *play;
 } CoverPlan;
 
 typedef struct CoverStats {
@@ -69,6 +72,7 @@ typedef struct CoverStats {
     uint32_t decoded;
     uint32_t overflow;
     uint32_t pending;
+    uint32_t deferred;
 } CoverStats;
 
 ScanResult cover_reconcile(const CoverJob *job, const CoverPlan *plan, CoverStats *stats);
