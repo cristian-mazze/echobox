@@ -17,6 +17,9 @@ enum {
     HOME_SETTINGS_INDEX = 1,
     SETTINGS_SCAN_COVERS_INDEX = 15,
     SETTINGS_BACKGROUND_COVERS_INDEX = 16,
+    SYNC_ICON_X = 29,
+    SYNC_ICON_Y = 5,
+    SYNC_ICON_SIZE = 13,
     SCREEN_TIMEOUT_MS = 30000,
     QUIET_MS = 20000,
     PAUSED_AT_MS = 42000,
@@ -442,6 +445,34 @@ static void scanning_all_covers_still_works_with_background_covers_off(void)
     CHECK(toast_is("Covers: 0 new"));
 }
 
+static uint32_t sync_icon_pixels(void)
+{
+    uint32_t sum = 0;
+    for (int y = SYNC_ICON_Y; y < SYNC_ICON_Y + SYNC_ICON_SIZE; y++) {
+        for (int x = SYNC_ICON_X; x < SYNC_ICON_X + SYNC_ICON_SIZE; x++) {
+            sum = sum * 31u + fake_hal_pixel(x, y);
+        }
+    }
+    return sum;
+}
+
+static uint32_t sync_area_after_start(uint32_t pending)
+{
+    start_with_pending(pending);
+    step();
+    return sync_icon_pixels();
+}
+
+static void the_status_bar_shows_the_sync_icon_only_while_covers_wait(void)
+{
+    uint32_t idle = sync_area_after_start(0);
+    uint32_t syncing = sync_area_after_start(3);
+    CHECK(syncing != idle);
+    choose_background_covers(BACKGROUND_COVERS_OFF);
+    step();
+    CHECK_EQUAL(idle, sync_icon_pixels());
+}
+
 int main(void)
 {
     static const TestCase cases[] = {
@@ -454,6 +485,7 @@ int main(void)
         TEST_CASE(background_covers_off_is_kept_after_a_restart),
         TEST_CASE(background_covers_when_paused_fills_as_before),
         TEST_CASE(scanning_all_covers_still_works_with_background_covers_off),
+        TEST_CASE(the_status_bar_shows_the_sync_icon_only_while_covers_wait),
         TEST_CASE(playing_music_never_fills_covers),
         TEST_CASE(the_screen_going_dark_on_its_own_after_a_long_pause_starts_at_once),
         TEST_CASE(a_lit_screen_waits),

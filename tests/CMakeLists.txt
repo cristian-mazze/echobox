@@ -129,6 +129,7 @@ foreach(ui_test theme_layout list_view list_navigation fast_scroll header menu_s
         LIBRARIES echo_ui_fixtures
     )
 endforeach()
+target_link_libraries(test_status_bar PRIVATE echo_fonts)
 
 echo_add_unit_test(NAME test_app
     SOURCES app/test_app.c app/fake_hal.c

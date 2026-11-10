@@ -641,6 +641,16 @@ static StatusBluetooth bluetooth_of(const BluetoothLink *link)
     return link->connected ? STATUS_BLUETOOTH_CONNECTED : STATUS_BLUETOOTH_ON;
 }
 
+static bool background_covers_on(void)
+{
+    return app.settings.settings.background_covers != BACKGROUND_COVERS_OFF;
+}
+
+static bool covers_syncing(void)
+{
+    return background_covers_on() && cover_filler_syncing(&app.filler);
+}
+
 static StatusBarState current_status_bar(void)
 {
     HalBattery battery = hal_power_battery();
@@ -652,6 +662,7 @@ static StatusBarState current_status_bar(void)
         .battery_percent = battery.percent,
         .charging = battery.charging,
         .show_percent = app.settings.settings.show_battery_percent,
+        .syncing = covers_syncing(),
     };
     if (top_screen()->bare_header && status.has_track) {
         now_playing_quality_text(status.format, state.quality, sizeof state.quality);
@@ -860,11 +871,6 @@ static void show_rescan_progress(uint32_t files, uint32_t tracks)
     StringBuilder builder = string_builder_make(text, sizeof text);
     i18n_format(&builder, STR_RESCAN_TRACKS_SO_FAR, arguments, 1);
     app_show_notice(i18n_text(STR_RESCAN_TITLE), text);
-}
-
-static bool background_covers_on(void)
-{
-    return app.settings.settings.background_covers != BACKGROUND_COVERS_OFF;
 }
 
 static void note_cover_batch(uint32_t decoding, uint32_t later)
@@ -1203,7 +1209,7 @@ PlayerStatus app_player_status(void)
 
 bool app_covers_syncing(void)
 {
-    return background_covers_on() && cover_filler_syncing(&app.filler);
+    return covers_syncing();
 }
 
 const char *app_toast_text(void)

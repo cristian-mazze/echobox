@@ -11,15 +11,20 @@ enum {
     NUB_DIVISOR = 5,
     BOLT_WIDTH_TENTHS = 6,
     BLUETOOTH_WIDTH_TENTHS = 7,
+    SYNC_SIZE_TENTHS = 13,
     TENTHS = 10,
     FULL_PERCENT = 100
 };
 
+static int band_height(const Theme *theme)
+{
+    return theme->metrics.status_height > 0 ? theme->metrics.status_height
+                                            : theme->metrics.header_height;
+}
+
 static int icon_top(const Theme *theme)
 {
-    int band = theme->metrics.status_height > 0 ? theme->metrics.status_height
-                                                : theme->metrics.header_height;
-    return (band - theme->metrics.status_icon_size) / 2;
+    return (band_height(theme) - theme->metrics.status_icon_size) / 2;
 }
 
 static int nub_width(int size)
@@ -40,6 +45,16 @@ Rect status_bar_bluetooth_area(const Theme *theme)
     int width = playback.width * BLUETOOTH_WIDTH_TENTHS / TENTHS;
     return (Rect){playback.x + playback.width + theme->metrics.padding / 2, playback.y,
                   width > 0 ? width : 1, playback.height};
+}
+
+Rect status_bar_sync_area(const Theme *theme)
+{
+    Rect bluetooth = status_bar_bluetooth_area(theme);
+    int size = theme->metrics.status_icon_size * SYNC_SIZE_TENTHS / TENTHS;
+    int band = band_height(theme);
+    size = size < band ? size : band;
+    return (Rect){bluetooth.x + bluetooth.width + theme->metrics.padding / 2, (band - size) / 2,
+                  size, size};
 }
 
 Rect status_bar_battery_area(const Theme *theme)
@@ -131,16 +146,11 @@ static void draw_battery(Canvas *canvas, const Theme *theme, StatusBarState stat
     canvas_fill_rect(canvas, inner, fill_color(theme, state));
 }
 
-static int band_height(const Theme *theme)
-{
-    return theme->metrics.status_height > 0 ? theme->metrics.status_height
-                                            : theme->metrics.header_height;
-}
-
 static Rect quality_span(const Theme *theme, StatusBarState state)
 {
-    Rect left = state.bluetooth != STATUS_BLUETOOTH_OFF ? status_bar_bluetooth_area(theme)
-                                                        : status_bar_playback_area(theme);
+    Rect left = state.syncing                             ? status_bar_sync_area(theme)
+                : state.bluetooth != STATUS_BLUETOOTH_OFF ? status_bar_bluetooth_area(theme)
+                                                          : status_bar_playback_area(theme);
     char text[STATUS_BAR_PERCENT_CAPACITY];
     status_bar_percent_text(state.battery_percent, text, sizeof text);
     int right = state.show_percent && state.battery_known
@@ -183,6 +193,9 @@ void status_bar_draw(Canvas *canvas, const Theme *theme, StatusBarState state)
         Color tint =
             state.bluetooth == STATUS_BLUETOOTH_CONNECTED ? color : theme->colors.text_tertiary;
         icon_draw_bluetooth(canvas, status_bar_bluetooth_area(theme), tint);
+    }
+    if (state.syncing) {
+        icon_draw_sync(canvas, status_bar_sync_area(theme), theme->colors.text_secondary);
     }
     if (state.battery_known) {
         draw_battery(canvas, theme, state);

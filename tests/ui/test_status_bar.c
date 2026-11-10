@@ -1,6 +1,7 @@
 #include <string.h>
 
 #include "check.h"
+#include "fonts/fonts.h"
 #include "ui/header.h"
 #include "ui/status_bar.h"
 #include "ui_test_canvas.h"
@@ -10,7 +11,13 @@ enum {
     STATUS_HEADER_HEIGHT = 12,
     STATUS_ICON_SIZE = 6,
     LOW_BATTERY = 10,
-    HALF_BATTERY = 50
+    HALF_BATTERY = 50,
+    DEVICE_LONG_SIDE = 320,
+    DEVICE_SHORT_SIDE = 170,
+    DEVICE_HEADER_HEIGHT = 24,
+    DEVICE_PORTRAIT_STATUS = 16,
+    DEVICE_PADDING = 6,
+    DEVICE_ICON_SIZE = 10
 };
 
 static Theme status_theme(void)
@@ -175,6 +182,56 @@ static void the_percentage_moves_left_of_the_bolt_while_charging(void)
     CHECK(!ui_test_area_has_only(&canvas, percent, theme.colors.header_background));
 }
 
+static void a_syncing_player_shows_the_sync_icon(void)
+{
+    Theme theme = status_theme();
+    StatusBarState state = {.playback = STATUS_PLAYBACK_NONE, .syncing = true};
+    Canvas canvas = draw_status(&theme, state);
+    CHECK(
+        ui_test_area_has_color(&canvas, status_bar_sync_area(&theme), theme.colors.text_secondary));
+}
+
+static void without_sync_its_spot_stays_empty(void)
+{
+    Theme theme = status_theme();
+    Canvas canvas = draw_status(&theme, (StatusBarState){.playback = STATUS_PLAYBACK_NONE});
+    CHECK(ui_test_area_has_only(&canvas, status_bar_sync_area(&theme),
+                                theme.colors.header_background));
+}
+
+static Theme device_theme(bool portrait)
+{
+    Theme theme = TEST_THEME;
+    theme.fonts.small = &FONT_TERMINUS_BOLD_12;
+    theme.metrics.screen_width = portrait ? DEVICE_SHORT_SIDE : DEVICE_LONG_SIDE;
+    theme.metrics.screen_height = portrait ? DEVICE_LONG_SIDE : DEVICE_SHORT_SIDE;
+    theme.metrics.status_height = portrait ? DEVICE_PORTRAIT_STATUS : 0;
+    theme.metrics.header_height = DEVICE_HEADER_HEIGHT + (portrait ? DEVICE_PORTRAIT_STATUS : 0);
+    theme.metrics.padding = DEVICE_PADDING;
+    theme.metrics.status_icon_size = DEVICE_ICON_SIZE;
+    return theme;
+}
+
+static bool apart(Rect first, Rect second)
+{
+    return first.x + first.width <= second.x || second.x + second.width <= first.x;
+}
+
+static void the_sync_icon_keeps_clear_of_its_neighbours_on_the_device(void)
+{
+    for (int portrait = 0; portrait < 2; portrait++) {
+        Theme theme = device_theme(portrait == 1);
+        Rect sync = status_bar_sync_area(&theme);
+        int band = portrait == 1 ? DEVICE_PORTRAIT_STATUS : DEVICE_HEADER_HEIGHT;
+        CHECK(sync.y >= 0 && sync.y + sync.height <= band);
+        CHECK(apart(sync, status_bar_playback_area(&theme)));
+        CHECK(apart(sync, status_bar_bluetooth_area(&theme)));
+        CHECK(apart(sync, status_bar_bolt_area(&theme)));
+        CHECK(apart(sync, status_bar_percent_area(&theme, "100%", true)));
+        CHECK(sync.x + sync.width <= status_bar_percent_area(&theme, "100%", true).x);
+    }
+}
+
 int main(void)
 {
     static const TestCase cases[] = {
@@ -192,6 +249,9 @@ int main(void)
         TEST_CASE(a_charging_battery_is_drawn_in_the_success_color),
         TEST_CASE(a_charging_battery_has_a_bolt_beside_it),
         TEST_CASE(the_percentage_moves_left_of_the_bolt_while_charging),
+        TEST_CASE(a_syncing_player_shows_the_sync_icon),
+        TEST_CASE(without_sync_its_spot_stays_empty),
+        TEST_CASE(the_sync_icon_keeps_clear_of_its_neighbours_on_the_device),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));
 }

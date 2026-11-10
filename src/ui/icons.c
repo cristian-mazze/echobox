@@ -8,7 +8,9 @@ enum {
     SKIP_BAR_PARTS = 6,
     BOLT_STROKE_TENTHS = 5,
     BOLT_UPPER_START_TENTHS = 5,
-    BOLT_LOWER_END_TENTHS = 5
+    BOLT_LOWER_END_TENTHS = 5,
+    SYNC_STROKE = 2,
+    SYNC_HEAD = 3
 };
 
 static void draw_triangle(Canvas *canvas, Rect area, Color color, bool pointing_right)
@@ -125,4 +127,46 @@ void icon_draw_bluetooth(Canvas *canvas, Rect area, Color color)
             dot(canvas, area, along(row, quarter, 0, lower, right), row, color);
         }
     }
+}
+
+static bool in_ring(int dx, int dy, int outer, int inner)
+{
+    int distance = dx * dx + dy * dy;
+    return distance <= outer * outer && distance >= inner * inner;
+}
+
+static bool in_gap(int dx, int dy)
+{
+    return (dx > 0 && dy < 0 && dx > -dy) || (dx < 0 && dy > 0 && -dx > dy);
+}
+
+static void draw_ring(Canvas *canvas, Rect area, Color color)
+{
+    int outer = (area.width < area.height ? area.width : area.height) - 1;
+    int inner = outer - SYNC_STROKE * 2;
+    for (int row = 0; row < area.height; row++) {
+        for (int column = 0; column < area.width; column++) {
+            int dx = 2 * column - (area.width - 1);
+            int dy = 2 * row - (area.height - 1);
+            if (in_ring(dx, dy, outer, inner) && !in_gap(dx, dy)) {
+                canvas_fill_rect(canvas, (Rect){area.x + column, area.y + row, 1, 1}, color);
+            }
+        }
+    }
+}
+
+static void draw_head(Canvas *canvas, Point tip, int direction, Color color)
+{
+    for (int step = 0; step < SYNC_HEAD; step++) {
+        Rect row = {tip.x - step, tip.y + direction * step, 2 * step + 1, 1};
+        canvas_fill_rect(canvas, row, color);
+    }
+}
+
+void icon_draw_sync(Canvas *canvas, Rect area, Color color)
+{
+    int middle = area.y + area.height / 2;
+    draw_ring(canvas, area, color);
+    draw_head(canvas, (Point){area.x + area.width - SYNC_STROKE, middle - SYNC_HEAD}, 1, color);
+    draw_head(canvas, (Point){area.x + SYNC_STROKE - 1, middle + SYNC_HEAD - 1}, -1, color);
 }

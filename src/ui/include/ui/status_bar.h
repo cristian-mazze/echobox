@@ -32,11 +32,13 @@ typedef struct StatusBarState {
     uint8_t battery_percent;
     bool charging;
     bool show_percent;
+    bool syncing;
     char quality[STATUS_BAR_QUALITY_CAPACITY];
 } StatusBarState;
 
 Rect status_bar_playback_area(const Theme *theme);
 Rect status_bar_bluetooth_area(const Theme *theme);
+Rect status_bar_sync_area(const Theme *theme);
 Rect status_bar_battery_area(const Theme *theme);
 int status_bar_battery_fill_width(uint8_t percent, int inner_width);
 void status_bar_percent_text(uint8_t percent, char *text, size_t capacity);
