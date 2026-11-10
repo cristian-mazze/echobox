@@ -30,7 +30,7 @@ Tested starting points: FiiO firmware 3.7.0, 3.9.0 and 4.0.0 (Settings → About
 3. Eject the drive (Windows: Safely Remove; macOS: Eject), then unplug.
 4. Take the microSD card out.
 5. Switch the player off and on again. It shows "Updating, Don't power off" for about a minute or two. Leave it alone until EchoPod starts.
-6. Put the microSD card back. On the first start with a card, EchoPod builds its library and album covers, which takes a minute or two (about 1 minute 45 seconds for 1,563 tracks and 144 albums).
+6. Put the microSD card back. On the first start with a card, EchoPod builds its library and the covers of the first 100 albums, which takes a minute or two (about 1 minute 45 seconds for 1,563 tracks and 144 albums). The rest of the covers load later (see "Album covers" below).
 
 If "Updating" flashes for under a second and FiiO's firmware comes back, the install didn't happen. See "If something goes wrong" below. One tester whose FiiO firmware kept refusing the file got it to install after first updating to FiiO's 3.8 firmware.
 
@@ -42,6 +42,18 @@ If "Updating" flashes for under a second and FiiO's firmware comes back, the ins
 - `.m3u` and `.m3u8` playlists anywhere on the card appear under Music → Playlists.
 - Libraries of many thousands of tracks work; `docs/known-issues.md` lists the sizes tested so far.
 - EchoPod keeps its own files in a hidden `/.echo` folder on the card, about 110 MB of them. Don't delete it unless you want the library rebuilt.
+
+## Album covers
+
+A library scan decodes the covers of 100 albums at most, starting with the album you last played and its Cover Flow neighbours, so a large library is ready to play in about a minute. When albums are left, the scan says so while it runs ("First 100 albums · the rest will load while you listen") and in its result ("· more covers load while you listen").
+
+The remaining covers load in the background, in short sessions of a few seconds, while the player is paused or stopped with the screen off for 20 seconds, on battery (20 % or more) and not plugged into USB. The album that was playing and albums you scrolled past without a cover come first. Any button ends a session at once, and ▶ resumes where you paused. While covers are still waiting, the status bar shows a small circle of two arrows next to the play icon; it goes away once every album with art has a cover. Cover Flow shows a plain tile for an album until its cover has loaded. When you wake the screen, the playing album's cover is already there if a session loaded it.
+
+**Settings → Background covers** chooses when this happens:
+
+- **Always** (the default) loads covers whenever the conditions above are met. Loading while music plays isn't there yet, so for now it behaves like When paused.
+- **When paused** loads covers only while the music is paused or stopped.
+- **Off** never loads covers in the background and hides the status-bar icon. The scan's messages then point to **Settings → Scan all covers**, which loads every missing cover at once with a progress screen: it pauses the music first, and ↩ stops it.
 
 ## Copying music over USB
 

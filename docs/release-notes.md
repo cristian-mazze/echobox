@@ -1,5 +1,19 @@
 # EchoPod release notes
 
+## Next
+
+### New
+
+- **The first scan is ready sooner on large libraries.** A scan now decodes the covers of 100 albums (the last-played album and its Cover Flow neighbours first) and leaves the rest for later, and says so: "First 100 albums · the rest will load while you listen" while it runs and "· more covers load while you listen" in its result. Before, it stopped after a minute, so how many covers it left depended on the art.
+- **The remaining covers load in the background** while the player is paused or stopped with the screen off, in short sessions that any button ends. A small sync icon in the status bar shows while covers are still waiting. When you wake the screen, the playing album's cover is there on the first frame.
+- **Settings → Background covers**: Always, When paused or Off. Always behaves like When paused until covers can load while music plays. With Off, the scan messages point to Settings → Scan all covers.
+- **Longer messages wrap** onto more lines instead of being cut, and a notice can carry a second, dimmer line of detail.
+
+### When you update
+
+- Your library, covers, settings, equalizer, orientation, language and Bluetooth headphones stay as they are.
+- The settings file gains the Background covers choice. Going back to 0.9.1 or earlier makes that older firmware ignore the file and start from default settings. The list of covers still to load is kept in a new format too; older firmware starts that list over, which only means it looks for the missing covers again.
+
 ## 0.9.1
 
 Most of this comes from a comparison with FiiO's 4.0.0 firmware that velppa's Claude Code made (issue 12). Tested on the one Echo Mini 8 GB.
