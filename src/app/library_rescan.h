@@ -21,7 +21,13 @@ typedef struct RescanAnchor {
 typedef struct RescanProgress {
     void (*tracks)(uint32_t files, uint32_t tracks);
     void (*covers)(uint32_t done, uint32_t total);
+    void (*cover_batch)(uint32_t decoding, uint32_t later);
 } RescanProgress;
+
+typedef struct CoverBatch {
+    uint32_t decoding;
+    uint32_t later;
+} CoverBatch;
 
 typedef struct CoverQueueKeys {
     const uint32_t *keys;
@@ -55,6 +61,10 @@ extern const char RESCAN_TIMES_PATH[];
 
 RescanOutcome library_rescan_run(RescanProgress progress, RescanAnchor anchor);
 const char *library_rescan_message(RescanOutcome outcome, char *text, uint32_t capacity);
+const char *library_rescan_covers_message(RescanOutcome outcome, bool manual, char *text,
+                                          uint32_t capacity);
+const char *library_rescan_batch_detail(CoverBatch batch, bool manual, char *text,
+                                        uint32_t capacity);
 CoverFillOutcome library_rescan_fill(const CoverFillRequest *request);
 const char *library_rescan_fill_message(CoverFillOutcome outcome, char *text, uint32_t capacity);
 uint32_t library_rescan_covers_capacity(void);

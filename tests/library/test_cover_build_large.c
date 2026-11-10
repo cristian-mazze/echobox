@@ -322,6 +322,32 @@ static ScanResult rescan(CoverStats *stats)
     return cover_build(&job, stats);
 }
 
+typedef struct BatchSeen {
+    uint32_t batches;
+    uint32_t decoding;
+    uint32_t later;
+    uint32_t largest_total;
+} BatchSeen;
+
+static BatchSeen seen;
+
+static void note_batch(void *context, uint32_t decoding, uint32_t later)
+{
+    (void)context;
+    seen.batches++;
+    seen.decoding = decoding;
+    seen.later = later;
+    seen.largest_total = 0;
+}
+
+static void note_progress(void *context, uint32_t done, uint32_t total)
+{
+    (void)context;
+    (void)done;
+    seen.largest_total =
+        seen.batches > 0 && total > seen.largest_total ? total : seen.largest_total;
+}
+
 static uint32_t slow_clock(void *context)
 {
     uint32_t *now = context;
@@ -348,7 +374,9 @@ static ScanResult initial_rescan(CoverStats *stats)
                     .memory = memory,
                     .size = sizeof memory,
                     .scratch = {buffer_read, &scratch_file},
-                    .scratch_size = SCRATCH_SIZE};
+                    .scratch_size = SCRATCH_SIZE,
+                    .progress = {note_progress, NULL, note_batch}};
+    seen = (BatchSeen){0, 0, 0, 0};
     CoverPlan plan = {.budget = {COVER_INITIAL_MS, COVER_INITIAL_ALBUMS},
                       .clock = {slow_clock, &now},
                       .state = state};
@@ -424,6 +452,10 @@ static void the_initial_budget_decodes_100_albums_even_when_each_is_slow(void)
     report_pass("initial budget", &stats);
     CHECK_EQUAL(COVER_INITIAL_ALBUMS, stats.decoded);
     CHECK_EQUAL(ALBUMS - COVER_INITIAL_ALBUMS, stats.pending);
+    CHECK_EQUAL(1u, seen.batches);
+    CHECK_EQUAL(COVER_INITIAL_ALBUMS, seen.decoding);
+    CHECK_EQUAL(ALBUMS - COVER_INITIAL_ALBUMS, seen.later);
+    CHECK_EQUAL(COVER_INITIAL_ALBUMS, seen.largest_total);
 }
 
 static void a_small_library_decodes_every_album_in_the_initial_budget(void)
@@ -433,6 +465,8 @@ static void a_small_library_decodes_every_album_in_the_initial_budget(void)
     CHECK_EQUAL(SCAN_OK, initial_rescan(&stats));
     CHECK_EQUAL(SMALL_LIBRARY_ALBUMS, stats.decoded);
     CHECK_EQUAL(0u, stats.pending);
+    CHECK_EQUAL(SMALL_LIBRARY_ALBUMS, seen.decoding);
+    CHECK_EQUAL(0u, seen.later);
 }
 
 static void committing_each_cover_of_a_full_card_is_measured(void)

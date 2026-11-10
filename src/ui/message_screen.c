@@ -9,7 +9,8 @@
 
 enum {
     MESSAGE_LINES = 4,
-    DETAIL_LINES = 3,
+    DETAIL_LINES = 5,
+    BLOCK_LINES = DETAIL_LINES > MESSAGE_LINES ? DETAIL_LINES : MESSAGE_LINES,
     DETAIL_GAP = 8,
     LINE_GAP = 2
 };
@@ -28,7 +29,7 @@ static void update(void *context, uint32_t now_ms)
 }
 
 typedef struct TextBlock {
-    char lines[MESSAGE_LINES][TEXT_WRAP_LINE_CAPACITY];
+    char lines[BLOCK_LINES][TEXT_WRAP_LINE_CAPACITY];
     int count;
     TextStyle style;
 } TextBlock;

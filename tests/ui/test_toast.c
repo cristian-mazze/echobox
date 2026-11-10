@@ -64,10 +64,13 @@ static void a_long_toast_wraps_onto_more_lines_and_stays_longer(void)
     CHECK(!toast.visible);
 }
 
-static void a_toast_has_at_most_three_lines_and_stays_on_screen(void)
+static void a_toast_has_at_most_seven_lines_and_stays_on_screen(void)
 {
     Toast toast = {0};
-    toast_show(&toast, "AB AB AB AB AB AB AB AB AB AB AB AB AB AB AB AB AB AB", NOW_MS);
+    toast_show(&toast,
+               "AB AB AB AB AB AB AB AB AB AB AB AB AB AB AB AB AB AB AB AB AB AB AB AB AB AB AB "
+               "AB AB AB AB AB AB AB AB AB",
+               NOW_MS);
     CHECK_EQUAL(TOAST_LINES, toast_line_count(&toast, &TEST_THEME));
     Rect area = toast_area(&toast, &TEST_THEME);
     CHECK(area.y >= 0);
@@ -91,7 +94,7 @@ int main(void)
         TEST_CASE(a_visible_toast_paints_its_box),
         TEST_CASE(a_hidden_toast_paints_nothing),
         TEST_CASE(a_long_toast_wraps_onto_more_lines_and_stays_longer),
-        TEST_CASE(a_toast_has_at_most_three_lines_and_stays_on_screen),
+        TEST_CASE(a_toast_has_at_most_seven_lines_and_stays_on_screen),
         TEST_CASE(a_short_toast_keeps_one_line),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));

@@ -328,6 +328,13 @@ if(ECHO_BUILD_SIM)
         SOURCES sim/test_sim_glyphs.c
         LIBRARIES echo_sim_glyphs echo_fonts
     )
+    echo_add_unit_test(NAME test_text_fit
+        SOURCES sim/test_text_fit.c
+        LIBRARIES echo_sim_glyphs echo_fonts echo_ui echo_settings echo_hal
+    )
+    target_compile_definitions(test_text_fit PRIVATE
+        ECHO_LANGUAGE_PACK_PATHS="${ECHO_LANGUAGE_PACK_PATHS}"
+    )
     target_compile_definitions(test_sim_storage PRIVATE
         ECHO_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
         ECHO_TEST_OUTPUT_DIR="${CMAKE_CURRENT_BINARY_DIR}"

@@ -53,7 +53,8 @@ enum {
     IDLE_RENDER_MS = 100,
     NUMBER_CAPACITY = 12,
     PROGRESS_TEXT_CAPACITY = 64,
-    MESSAGE_TEXT_CAPACITY = 64
+    MESSAGE_TEXT_CAPACITY = 64,
+    COVERS_TEXT_CAPACITY = 192
 };
 
 static const KeyConfig KEY_CONFIG = {
@@ -106,6 +107,7 @@ typedef struct AppState {
     bool usb_power;
     bool rescan_requested;
     bool cover_scan_requested;
+    CoverBatch cover_batch;
     bool music_check_requested;
     CoverFiller filler;
     bool light_after_frame;
@@ -860,6 +862,34 @@ static void show_rescan_progress(uint32_t files, uint32_t tracks)
     app_show_notice(i18n_text(STR_RESCAN_TITLE), text);
 }
 
+static bool background_covers_on(void)
+{
+    return app.settings.settings.background_covers != BACKGROUND_COVERS_OFF;
+}
+
+static void note_cover_batch(uint32_t decoding, uint32_t later)
+{
+    app.cover_batch = (CoverBatch){decoding, later};
+}
+
+static const char *cover_batch_detail(void)
+{
+    static char text[COVERS_TEXT_CAPACITY];
+    return library_rescan_batch_detail(app.cover_batch, !background_covers_on(), text, sizeof text);
+}
+
+static void show_notice_with_detail(const char *title, const char *message, const char *detail)
+{
+    MessageConfig config = {
+        .title = title, .message = message, .detail = detail, .theme = current_theme()};
+    Screen *screen = message_screen_init(&app.notice, config);
+    if (!app.display_on) {
+        set_display(true);
+    }
+    render((FrameDrawer){.draw = draw_notice, .context = screen}, false);
+    light_after_first_frame();
+}
+
 static void show_cover_progress(uint32_t done, uint32_t total)
 {
     static uint32_t shown_ms;
@@ -876,7 +906,7 @@ static void show_cover_progress(uint32_t done, uint32_t total)
     const char *arguments[] = {finished, albums};
     StringBuilder builder = string_builder_make(text, sizeof text);
     i18n_format(&builder, STR_RESCAN_ALBUMS_PROGRESS, arguments, 2);
-    app_show_notice(i18n_text(STR_RESCAN_COVERS_TITLE), text);
+    show_notice_with_detail(i18n_text(STR_RESCAN_COVERS_TITLE), text, cover_batch_detail());
 }
 
 static void explain_refusals(uint32_t now_ms)
@@ -905,10 +935,13 @@ static RescanAnchor rescan_anchor(void)
 static void run_rescan(void)
 {
     app_show_notice(i18n_text(STR_RESCAN_TITLE), i18n_text(STR_RESCAN_STARTING));
-    RescanProgress progress = {show_rescan_progress, show_cover_progress};
+    app.cover_batch = (CoverBatch){0, 0};
+    RescanProgress progress = {show_rescan_progress, show_cover_progress, note_cover_batch};
     RescanOutcome outcome = library_rescan_run(progress, rescan_anchor());
-    static char message[MESSAGE_TEXT_CAPACITY];
-    const char *text = library_rescan_message(outcome, message, sizeof message);
+    app.cover_batch = (CoverBatch){0, 0};
+    static char message[COVERS_TEXT_CAPACITY];
+    const char *text =
+        library_rescan_covers_message(outcome, !background_covers_on(), message, sizeof message);
     if (outcome.result == SCAN_OK) {
         music_check_remember(music_check_fingerprint());
         app_start();
@@ -946,11 +979,6 @@ static void run_cover_scan(void)
     const char *text = library_rescan_fill_message(outcome, message, sizeof message);
     app_wake();
     toast_show(&app.toast, text, hal_clock_milliseconds());
-}
-
-static bool background_covers_on(void)
-{
-    return app.settings.settings.background_covers != BACKGROUND_COVERS_OFF;
 }
 
 static void fill_covers_when_idle(uint32_t now_ms)
@@ -1128,13 +1156,7 @@ bool app_charging(void)
 
 void app_show_notice(const char *title, const char *message)
 {
-    MessageConfig config = {.title = title, .message = message, .theme = current_theme()};
-    Screen *screen = message_screen_init(&app.notice, config);
-    if (!app.display_on) {
-        set_display(true);
-    }
-    render((FrameDrawer){.draw = draw_notice, .context = screen}, false);
-    light_after_first_frame();
+    show_notice_with_detail(title, message, NULL);
 }
 
 void app_show_splash(void)

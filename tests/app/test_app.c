@@ -1160,6 +1160,58 @@ static void each_way_a_scan_runs_out_has_its_own_message(void)
     CHECK(rescan_message_is(SCAN_TOO_MANY, "Too many tracks for the player"));
 }
 
+static RescanOutcome rescan_with_covers(uint32_t covers, uint32_t pending)
+{
+    RescanOutcome outcome = {.result = SCAN_OK, .cover_result = SCAN_OK};
+    outcome.stats.tracks = 300;
+    outcome.covers.albums = 150;
+    outcome.covers.covers = covers;
+    outcome.covers.pending = pending;
+    return outcome;
+}
+
+static bool covers_message_is(RescanOutcome outcome, bool manual, const char *expected)
+{
+    char text[192];
+    const char *message = library_rescan_covers_message(outcome, manual, text, sizeof text);
+    return strcmp(expected, message) == 0;
+}
+
+static void a_rescan_that_leaves_covers_says_they_load_in_the_background(void)
+{
+    CHECK(covers_message_is(rescan_with_covers(100, 50), false,
+                            "Library: 300 tracks, 100 covers · more covers load while you listen"));
+}
+
+static void with_background_covers_off_the_rescan_points_to_settings(void)
+{
+    CHECK(covers_message_is(
+        rescan_with_covers(100, 50), true,
+        "Library: 300 tracks, 100 covers · find the rest with Settings > Scan all covers"));
+}
+
+static void a_rescan_that_leaves_nothing_says_nothing_more(void)
+{
+    CHECK(covers_message_is(rescan_with_covers(150, 0), false, "Library: 300 tracks, 150 covers"));
+    RescanOutcome failed = rescan_with_covers(100, 50);
+    failed.cover_result = SCAN_WRITE_FAILED;
+    CHECK(covers_message_is(failed, false, "Library: 300 tracks, no covers"));
+}
+
+static void the_first_batch_detail_shows_only_when_covers_wait(void)
+{
+    char text[192];
+    CHECK(library_rescan_batch_detail((CoverBatch){100, 0}, false, text, sizeof text) == NULL);
+    const char *later =
+        library_rescan_batch_detail((CoverBatch){100, 2839}, false, text, sizeof text);
+    CHECK(later != NULL &&
+          strcmp("First 100 albums · the rest will load while you listen", later) == 0);
+    const char *manual =
+        library_rescan_batch_detail((CoverBatch){100, 2839}, true, text, sizeof text);
+    CHECK(manual != NULL &&
+          strcmp("First 100 albums · find the rest with Settings > Scan all covers", manual) == 0);
+}
+
 static void a_rescan_borrows_the_idle_audio_buffer_for_its_listing(void)
 {
     start_app_with_library();
@@ -1986,6 +2038,10 @@ int main(void)
         TEST_CASE(a_rescan_without_scratch_memory_says_so),
         TEST_CASE(a_rescan_borrows_the_idle_audio_buffer_for_its_listing),
         TEST_CASE(each_way_a_scan_runs_out_has_its_own_message),
+        TEST_CASE(a_rescan_that_leaves_covers_says_they_load_in_the_background),
+        TEST_CASE(with_background_covers_off_the_rescan_points_to_settings),
+        TEST_CASE(a_rescan_that_leaves_nothing_says_nothing_more),
+        TEST_CASE(the_first_batch_detail_shows_only_when_covers_wait),
         TEST_CASE(the_music_check_after_an_installed_update_skips_the_walk),
         TEST_CASE(a_fresh_card_gets_the_player_files_and_a_first_scan),
         TEST_CASE(a_card_that_has_the_files_is_not_rescanned),

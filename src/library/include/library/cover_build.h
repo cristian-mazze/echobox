@@ -17,6 +17,7 @@ enum {
 typedef struct CoverProgress {
     void (*report)(void *context, uint32_t done, uint32_t total);
     void *context;
+    void (*batch)(void *context, uint32_t decoding, uint32_t later);
 } CoverProgress;
 
 typedef struct CoverJob {

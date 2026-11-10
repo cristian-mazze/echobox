@@ -235,12 +235,27 @@ static void a_broken_image_is_not_retried_until_its_stamp_changes(void)
     CHECK_EQUAL(0u, cover_state_failure_count(state));
 }
 
+static uint32_t announced_later;
+
+static void remember_later(void *context, uint32_t decoding, uint32_t later)
+{
+    (void)context;
+    (void)decoding;
+    announced_later = later;
+}
+
 static void albums_beyond_the_slots_are_counted_apart(void)
 {
     CoverStats stats;
-    CoverPlan plan = plan_for(0);
+    CoverPlan plan = plan_for(1);
     five_albums();
     card_covers_capacity = 16 + 3 * CARD_RECORD_SLOT;
+    CoverJob job = card_cover_job(true);
+    job.progress.batch = remember_later;
+    announced_later = 99;
+    CHECK_EQUAL(SCAN_OK, cover_reconcile(&job, &plan, &stats));
+    CHECK_EQUAL(2u, announced_later);
+    plan = plan_for(0);
     CHECK_EQUAL(SCAN_OK, reconcile(&plan, &stats));
     CHECK_EQUAL(3u, stats.covers);
     CHECK_EQUAL(2u, stats.overflow);

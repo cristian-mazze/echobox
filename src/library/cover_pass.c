@@ -86,31 +86,57 @@ static uint32_t start_position(const CoverState *state, CoverFlowOrder order)
     return position;
 }
 
+static uint32_t overflow_of(const CoverState *state)
+{
+    uint32_t free_slots = state->index.layout.slots - state->index.count;
+    return state->pending_new > free_slots ? state->pending_new - free_slots : 0;
+}
+
+static uint32_t announce_batch(const CoverState *state, const CoverJob *job)
+{
+    uint32_t wanted = state->pending_new + state->pending_known - overflow_of(state);
+    uint32_t limit = state->plan->budget.max_albums;
+    uint32_t decoding = limit != 0 && wanted > limit ? limit : wanted;
+    if (job->progress.batch != NULL) {
+        job->progress.batch(job->progress.context, decoding, wanted - decoding);
+    }
+    return decoding;
+}
+
+static uint32_t decoded_so_far(const CoverState *state, uint32_t wanted)
+{
+    return wanted - state->pending_new - state->pending_known;
+}
+
+static bool more_to_decode(const CoverState *state, uint32_t step)
+{
+    return step < 2 * state->albums + 1 && state->pending_new + state->pending_known > 0 &&
+           cover_work_budget_left(state);
+}
+
 static ScanResult decode_pending(CoverState *state, const CoverJob *job, CoverStats *stats)
 {
     CoverFlowOrder order = cover_flow_order_make(&state->library);
     uint32_t start = start_position(state, order);
     uint32_t wanted = state->pending_new + state->pending_known;
+    uint32_t decoding = announce_batch(state, job);
     ScanResult result = SCAN_OK;
-    for (uint32_t step = 0;
-         result == SCAN_OK && step < 2 * state->albums + 1 &&
-         state->pending_new + state->pending_known > 0 && cover_work_budget_left(state);
-         step++) {
+    for (uint32_t step = 0; result == SCAN_OK && more_to_decode(state, step); step++) {
         uint32_t position = 0;
         uint32_t album = 0;
         if (around(start, step, state->albums, &position) &&
             album_at(state, order, position, &album) && cover_work_pending(state, album)) {
-            cover_work_report(job, wanted - state->pending_new - state->pending_known, wanted);
+            cover_work_report(job, decoded_so_far(state, wanted), decoding);
             result = decode_pending_album(state, job, stats, album);
         }
     }
+    cover_work_report(job, decoded_so_far(state, wanted), decoding);
     return result;
 }
 
 static void count_left(const CoverState *state, CoverStats *stats)
 {
-    uint32_t free_slots = state->index.layout.slots - state->index.count;
-    uint32_t over = state->pending_new > free_slots ? state->pending_new - free_slots : 0;
+    uint32_t over = overflow_of(state);
     stats->covers = state->index.count;
     stats->overflow += over;
     stats->pending = state->pending_new + state->pending_known - over;
@@ -147,7 +173,6 @@ ScanResult cover_reconcile(const CoverJob *job, const CoverPlan *plan, CoverStat
     result = decode_pending(state, job, stats);
     count_left(state, stats);
     note_reconciled(state, result, stats);
-    cover_work_report(job, state->albums, state->albums);
     return result;
 }
 

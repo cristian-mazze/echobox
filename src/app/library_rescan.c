@@ -19,6 +19,7 @@ const char RESCAN_TIMES_PATH[] = "/.echo/rescan_times.bin";
 
 enum {
     NUMBER_CAPACITY = 12,
+    MORE_TEXT_CAPACITY = 96,
     STATE_ROOM = (COVER_STATE_BYTES + 7) & ~7
 };
 
@@ -174,6 +175,14 @@ static void report_covers(void *context, uint32_t done, uint32_t total)
     }
 }
 
+static void report_batch(void *context, uint32_t decoding, uint32_t later)
+{
+    RescanFiles *rescan = context;
+    if (rescan->progress.cover_batch != NULL) {
+        rescan->progress.cover_batch(decoding, later);
+    }
+}
+
 static uint32_t reserved_size_of(const char *path)
 {
     HalFile file;
@@ -221,7 +230,7 @@ static CoverJob cover_job(const ScanJob *scan, uint32_t capacity, bool previous)
         .capacity = capacity,
         .memory = (uint8_t *)scan->memory + STATE_ROOM,
         .size = scan->size - STATE_ROOM,
-        .progress = {report_covers, files},
+        .progress = {report_covers, files, report_batch},
         .scratch = {read_handle, &files->scratch},
         .scratch_size = files->scratch.size,
     };
@@ -447,7 +456,7 @@ CoverFillOutcome library_rescan_fill(const CoverFillRequest *request)
     }
     bool facts = hal_file_open(&files->scratch, LIBRARY_SCRATCH_PATH);
     files->scratch.size = facts ? files->scratch.size : 0;
-    files->progress = (RescanProgress){NULL, request->progress};
+    files->progress = (RescanProgress){NULL, request->progress, NULL};
     outcome.result = fill_with_code(files, request, &outcome.stats);
     if (facts) {
         hal_file_close(&files->scratch);
@@ -527,6 +536,41 @@ const char *library_rescan_message(RescanOutcome outcome, char *text, uint32_t c
     const char *arguments[] = {tracks, covers};
     StringBuilder builder = string_builder_make(text, capacity);
     i18n_format(&builder, library_pattern(outcome), arguments, 2);
+    return text;
+}
+
+static bool covers_left(RescanOutcome outcome)
+{
+    return outcome.result == SCAN_OK && outcome.cover_result == SCAN_OK &&
+           outcome.covers.pending > 0;
+}
+
+const char *library_rescan_covers_message(RescanOutcome outcome, bool manual, char *text,
+                                          uint32_t capacity)
+{
+    if (!covers_left(outcome)) {
+        return library_rescan_message(outcome, text, capacity);
+    }
+    char library[MORE_TEXT_CAPACITY];
+    const char *summary = library_rescan_message(outcome, library, sizeof library);
+    const char *arguments[] = {summary,
+                               i18n_text(manual ? STR_RESCAN_MORE_MANUAL : STR_RESCAN_MORE_LATER)};
+    StringBuilder builder = string_builder_make(text, capacity);
+    i18n_format(&builder, STR_RESCAN_WITH_MORE, arguments, 2);
+    return text;
+}
+
+const char *library_rescan_batch_detail(CoverBatch batch, bool manual, char *text,
+                                        uint32_t capacity)
+{
+    if (batch.later == 0) {
+        return NULL;
+    }
+    char first[NUMBER_CAPACITY];
+    number_text(first, sizeof first, batch.decoding);
+    const char *arguments[] = {first};
+    StringBuilder builder = string_builder_make(text, capacity);
+    i18n_format(&builder, manual ? STR_COVERS_FIRST_MANUAL : STR_COVERS_FIRST_LATER, arguments, 1);
     return text;
 }
 

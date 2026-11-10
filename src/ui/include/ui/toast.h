@@ -9,7 +9,7 @@
 enum {
     TOAST_DURATION_MS = 1500,
     TOAST_LONG_DURATION_MS = 3000,
-    TOAST_LINES = 3
+    TOAST_LINES = 7
 };
 
 typedef struct Toast {
