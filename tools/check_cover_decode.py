@@ -17,6 +17,7 @@ EXIT_BASE = 10
 RESULTS = {0: "ok", 1: "unsupported", 2: "corrupt", 3: "too big", 4: "no memory",
            5: "needs idle", 6: "cancelled"}
 WINDOW_ROWS = 9
+CANCEL_AT = 20
 JPEG_FRAMES = (0xC0, 0xC1, 0xC2)
 PASS_STARTS = [(0, 0, 8, 8), (4, 0, 8, 8), (0, 4, 4, 8), (2, 0, 4, 4), (0, 2, 2, 4), (1, 0, 2, 2),
                (0, 1, 1, 2)]
@@ -358,8 +359,11 @@ def rolling_expectation(data):
     return None
 
 
-def run_tool(tool, image_path, record_path, rolling=False):
-    command = [str(tool)] + (["--rolling"] if rolling else []) + [str(image_path), str(record_path)]
+def run_tool(tool, image_path, record_path, rolling=False, yields=None):
+    command = [str(tool)] + (["--rolling"] if rolling else [])
+    if yields is not None:
+        command += ["--yield", str(yields[0]), str(yields[1])]
+    command += [str(image_path), str(record_path)]
     result = subprocess.run(command, capture_output=True)
     if result.returncode == 0:
         return "ok"
@@ -398,7 +402,25 @@ def check_rolling(tool, work, case, record):
         return f"{case.name}: rolling expected {expected}, got {outcome}"
     if outcome == "ok" and rolling_path.read_bytes() != record:
         return f"{case.name}: the rolling record differs from the full grid record"
+    yielded = check_yielding(tool, work, case, record, expected)
+    if yielded is not None:
+        return yielded
     print(f"ok   {case.name}: rolling {outcome}")
+    return None
+
+
+def check_yielding(tool, work, case, record, expected):
+    image_path = work / case.name
+    paced_path = work / f"{case.name}.paced"
+    outcome = run_tool(tool, image_path, paced_path, rolling=True, yields=(3, 0))
+    if outcome != expected:
+        return f"{case.name}: yielding expected {expected}, got {outcome}"
+    if outcome == "ok" and paced_path.read_bytes() != record:
+        return f"{case.name}: the yielding record differs from the full grid record"
+    refused = run_tool(tool, image_path, paced_path, rolling=True, yields=(1, CANCEL_AT))
+    wanted = "cancelled" if expected == "ok" else expected
+    if refused != wanted:
+        return f"{case.name}: a refusal at yield {CANCEL_AT} expected {wanted}, got {refused}"
     return None
 
 
