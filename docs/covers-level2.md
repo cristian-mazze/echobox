@@ -107,58 +107,6 @@ Phase 1 adds the rolling output mode to `src/image` and proves that it matches t
 
 The starting sizes are a main code window of 151,068 of 157,292 B and a rescan overlay of 85,628 of 86,016 B. The level 1 decoder (`jpeg.c`, `png.c`, `inflate.c`, `cover_grid.c`) is linked into the rescan overlay, which has only 388 B to spare, so every step checks the overlay size.
 
-### 1.1 Render one row at a time
-
-- Split `cover_grid_render` into `cover_grid_render_row` (one 112-px row of RGB565) and `cover_grid_render_half_row` (one 56-px row from two cell rows). `cover_grid_render` becomes a loop over them.
-- The conversion of one cell row works on plain pointers: the sums and weights of each channel for that row. The rolling grid can then reuse it on its ring buffer and match by construction.
-- Tests: `test_cover_grid` gets a case that compares the row by row output with the whole render, and `cover_decode_matches_pillow` stays green.
-- Commit: `refactor: Cover grids render one row at a time`
-
-### 1.2 Rolling grid
-
-- New `src/image/include/image/cover_row_sink.h` with `CoverRowSink { bool (*full_row)(void *context, uint32_t y, const uint16_t *pixels); bool (*half_row)(void *context, uint32_t y, const uint16_t *pixels); void *context; }`. Returning false cancels the decode.
-- New `cover_grid_rolling.{c,h}`:
-  - `CoverGridRolling` keeps a ring of `COVER_ROLLING_ROWS = 9` cell rows per channel, with the same wrapping `uint32_t` sums as `cover_grid`.
-  - It has the same calls for adding samples (`add`, `add_color`, `row_start`, `row_pixel`, `row_finish`, `touches`, `set_sampling`).
-  - `cover_grid_rolling_reach(grid, y)` tells it that every decoded pixel above `y` has arrived. Each cell row that can no longer receive samples is then rendered, sent to the sink, and cleared for reuse.
-  - Each pair of finished rows also produces one 56-px half row.
-- `cover_grid_rolling_fits(width, height, sampling)` answers whether 9 rows are enough for this span and sampling. It holds the window arithmetic from phase 0, with a `_Static_assert` on the struct size.
-- Tests in `tests/image/test_cover_grid_rolling.c`: synthetic samples fed in JPEG MCU order (4:4:4, 4:2:2, 4:2:0, 4:1:1) and in PNG row order, over several spans and off-centre crops. The rows from the sink must match `cover_grid_render` on a full grid fed with the same samples, bit for bit, and so must the cancellation.
-- Commit: `feat: A rolling cover grid hands out finished rows`
-
-### 1.3 One decoder, two kinds of grid
-
-- `jpeg_decode` and `png_decode` stop calling `cover_grid_*` directly. They go through a small `CoverTarget` table: `add`, `add_color`, `touches`, `set_sampling`, `row_start`, `row_pixel`, `row_finish` and `reach`.
-- `cover_image_decode` (level 1) passes the full grid table, so the decode and the render stay the same.
-- **Size gate:** rebuild the device image and read `echo_rescan_overlay.map`. If the overlay passes 86,016 B, move `cover_grid.c` and the table into the main image, which has about 6 KB free, the way the overlay already reuses main-image symbols through `--just-symbols`. If that is still not enough, stop and report before changing anything else.
-- Tests: `cover_decode_matches_pillow`, `cover_build_matches_reference` and the fuzz rounds all stay green, and the level 1 output does not change.
-- Commit: `refactor: Image decoders write through a cover target`
-
-### 1.4 Rolling entry point and `COVER_IMAGE_NEEDS_IDLE`
-
-- `cover_image_decode_rows(ImageSource source, const CoverImageMemory *memory, CoverRowSink sink)` decodes baseline JPEG and non-interlaced PNG into the rolling grid.
-- It returns `COVER_IMAGE_NEEDS_IDLE` for progressive JPEG, Adam7 PNG, PNG rows over the row limit, and any span or sampling the window cannot cover.
-- `jpeg.c` calls `reach` after each MCU row and `png.c` after each image row.
-- `CoverImageMemory` is a fixed memory plan: decoder state, tables, MCU blocks, reader and rolling window. Its size is checked with `sizeof` and `_Static_assert`, so phase 3 can map it onto the borrowed regions.
-- The level 1 path does not use it, so the device linker drops it from the rescan overlay. The map shows whether that happened.
-- Commit: `feat: Baseline JPEG and plain PNG decode into the rolling grid`
-
-### 1.5 Bit-exact proof on every image
-
-- `cover_decode_tool` gets a `--rolling` mode that writes the same record from the row sink.
-- `check_cover_decode.py` runs every good case in both modes and requires identical bytes. It expects `NEEDS_IDLE` for progressive and Adam7, and runs the fuzz rounds in rolling mode under the sanitizers of the `dev` preset.
-- New generated cases:
-  - 4:4:4, 4:2:2, 4:2:0 and 4:1:1;
-  - with and without restart intervals;
-  - sizes that pick each DCT scale (1/1, 1/2, 1/4 and 1/8);
-  - non-square images whose crop is off centre.
-- Commit: `test: Rolling decodes match the full grid on every image`
-
-### 1.6 Memory report
-
-- Measure the peak memory of the rolling mode for each kind of image (state, tables, blocks, reader and window) and add it to this document. Note any change it implies for the region plan of phase 3.
-- Commit: `docs: Rolling decoder memory`
-
 ### Phase 1 result
 
 What was built, and where it differs from the steps above:

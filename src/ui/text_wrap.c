@@ -80,7 +80,7 @@ static size_t line_end(TextWrap wrap, const char *text, bool last, char *line)
                                          : split_word(wrap, text, first, line);
 }
 
-size_t text_wrap_line(TextWrap wrap, const char *text, bool last, char *line)
+static size_t text_wrap_line(TextWrap wrap, const char *text, bool last, char *line)
 {
     size_t fitted = line_end(wrap, text, last, line);
     copy_span(line, text, fitted);

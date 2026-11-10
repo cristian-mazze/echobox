@@ -14,6 +14,5 @@ typedef struct TextWrap {
     int width;
 } TextWrap;
 
-size_t text_wrap_line(TextWrap wrap, const char *text, bool last, char *line);
 int text_wrap_lines(TextWrap wrap, const char *text, char (*lines)[TEXT_WRAP_LINE_CAPACITY],
                     int max_lines);
