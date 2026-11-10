@@ -183,6 +183,31 @@ static void a_cancelled_fill_remembers_no_failure(void)
     CHECK_EQUAL(5u, covered());
 }
 
+static uint32_t polls_left;
+
+static bool stop_after_polls(void *context)
+{
+    (void)context;
+    polls_left -= polls_left > 0 ? 1u : 0u;
+    return polls_left == 0;
+}
+
+static void a_poll_that_asks_to_stop_keeps_the_cursor_on_the_unfinished_album(void)
+{
+    CoverStats stats;
+    CoverPlan plan = plan_for(0);
+    five_albums();
+    CHECK_EQUAL(SCAN_OK, reconcile(&(CoverPlan){.budget = {0, 1}, .state = state}, &stats));
+    plan.poll = (CoverPoll){stop_after_polls, NULL};
+    polls_left = 3;
+    CHECK_EQUAL(SCAN_CANCELLED, fill(&plan, &stats));
+    uint32_t stopped_at = cover_state_cursor(state);
+    CHECK(stopped_at < 5u);
+    plan.poll = (CoverPoll){NULL, NULL};
+    CHECK_EQUAL(SCAN_OK, fill(&plan, &stats));
+    CHECK_EQUAL(5u, covered());
+}
+
 static void a_broken_image_is_not_retried_until_its_stamp_changes(void)
 {
     CoverStats stats;
@@ -263,6 +288,7 @@ int main(void)
         TEST_CASE(filling_continues_from_the_cursor_until_every_cover_is_done),
         TEST_CASE(filling_serves_the_priority_album_first),
         TEST_CASE(a_cancelled_fill_remembers_no_failure),
+        TEST_CASE(a_poll_that_asks_to_stop_keeps_the_cursor_on_the_unfinished_album),
         TEST_CASE(a_broken_image_is_not_retried_until_its_stamp_changes),
         TEST_CASE(albums_beyond_the_slots_are_counted_apart),
         TEST_CASE(a_damaged_state_starts_empty),

@@ -83,6 +83,46 @@ static void a_position_reuses_the_slot_of_one_a_window_away(void)
     CHECK_EQUAL(COVER_LOADED, cover_cache_half(covers, COVER_CACHE_SLOTS, BLUE_ALBUM, &image));
 }
 
+static void covers_written_after_opening_show_after_a_refresh(void)
+{
+    uint32_t size = 0;
+    const uint8_t *bytes = fixture_covers_bytes(&size);
+    Image image;
+    fake_hal_reset();
+    cover_cache_open(&cache, fixture_library_open(&fixture));
+    CHECK(!cover_cache_has(&cache, RED_ALBUM));
+    fake_hal_add_file("/.echo/covers.bin", bytes, size);
+    cover_cache_refresh(&cache);
+    CHECK(cover_cache_has(&cache, RED_ALBUM));
+    CHECK(cover_cache_load_full(&cache, RED_ALBUM));
+    CHECK_EQUAL(COVER_LOADED, cover_cache_full(&cache, RED_ALBUM, &image));
+    CHECK_EQUAL(RED, image.pixels[0]);
+}
+
+static void a_full_load_without_a_cover_is_reported_once(void)
+{
+    CoverCache *covers = cache_with_covers();
+    uint16_t album = 0;
+    CHECK(!cover_cache_take_missed(covers, &album));
+    cover_cache_load_full(covers, RED_ALBUM);
+    CHECK(!cover_cache_take_missed(covers, &album));
+    cover_cache_load_full(covers, BARE_ALBUM);
+    CHECK(cover_cache_take_missed(covers, &album));
+    CHECK_EQUAL(BARE_ALBUM, album);
+    CHECK(!cover_cache_take_missed(covers, &album));
+}
+
+static void a_noted_album_is_reported_only_without_a_cover(void)
+{
+    CoverCache *covers = cache_with_covers();
+    uint16_t album = 0;
+    cover_cache_note_album(covers, BLUE_ALBUM);
+    CHECK(!cover_cache_take_missed(covers, &album));
+    cover_cache_note_album(covers, BARE_ALBUM);
+    CHECK(cover_cache_take_missed(covers, &album));
+    CHECK_EQUAL(BARE_ALBUM, album);
+}
+
 int main(void)
 {
     static const TestCase cases[] = {
@@ -92,6 +132,9 @@ int main(void)
         TEST_CASE(a_loaded_full_cover_has_its_pixels),
         TEST_CASE(an_album_without_art_is_missing),
         TEST_CASE(a_position_reuses_the_slot_of_one_a_window_away),
+        TEST_CASE(covers_written_after_opening_show_after_a_refresh),
+        TEST_CASE(a_full_load_without_a_cover_is_reported_once),
+        TEST_CASE(a_noted_album_is_reported_only_without_a_cover),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));
 }

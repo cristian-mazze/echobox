@@ -311,9 +311,15 @@ static void run_passes(const LibraryScanEntry *entry, const ScanJob *job, Rescan
     save_times(&outcome->covers);
 }
 
-RescanOutcome library_rescan_run(RescanProgress progress, RescanAnchor anchor)
+static RescanFiles *rescan_files(void)
 {
     static RescanFiles files;
+    return &files;
+}
+
+RescanOutcome library_rescan_run(RescanProgress progress, RescanAnchor anchor)
+{
+    RescanFiles *files = rescan_files();
     RescanOutcome outcome = {.result = SCAN_NO_MUSIC_ROOT, .cover_result = SCAN_OK};
     if (hal_system_restart_pending()) {
         outcome.result = SCAN_RESTART_NEEDED;
@@ -323,37 +329,136 @@ RescanOutcome library_rescan_run(RescanProgress progress, RescanAnchor anchor)
     if (!music_root_exists()) {
         return outcome;
     }
-    if (capacity == 0 || !hal_file_open(&files.scratch, LIBRARY_SCRATCH_PATH)) {
+    if (capacity == 0 || !hal_file_open(&files->scratch, LIBRARY_SCRATCH_PATH)) {
         outcome.result = SCAN_NO_ROOM;
         return outcome;
     }
     const LibraryScanEntry *entry = hal_system_load_rescan_code();
     if (entry == NULL || entry->magic != LIBRARY_SCAN_MAGIC) {
-        hal_file_close(&files.scratch);
+        hal_file_close(&files->scratch);
         outcome.result = SCAN_NO_CODE;
         return outcome;
     }
-    files.progress = progress;
-    files.anchor = anchor;
+    files->progress = progress;
+    files->anchor = anchor;
     uint32_t size = 0;
     void *memory = hal_system_borrow_scratch(&size);
     uint32_t listing_size = 0;
     void *listing = memory != NULL ? hal_system_borrow_listing(&listing_size) : NULL;
     ScanJob job = {
-        .files = {open_dir, next_entry, close_dir, open_file, close_file, &files},
+        .files = {open_dir, next_entry, close_dir, open_file, close_file, files},
         .memory = memory,
         .size = size,
         .listing = listing,
         .listing_size = listing_size,
-        .scratch = {read_handle, write_scratch, &files.scratch, files.scratch.size},
+        .scratch = {read_handle, write_scratch, &files->scratch, files->scratch.size},
         .sink = {write_library, NULL},
         .capacity = capacity,
-        .progress = {report, &files},
+        .progress = {report, files},
     };
     run_passes(entry, &job, &outcome);
-    hal_file_close(&files.scratch);
+    hal_file_close(&files->scratch);
     hal_system_return_scratch();
     return outcome;
+}
+
+static uint32_t albums_of(RescanFiles *files)
+{
+    Library library;
+    ByteSource source = {read_handle, &files->library};
+    bool opened = library_open(&library, source, files->library.size) == LIBRARY_OK;
+    return opened ? library_count(&library, LIBRARY_ALBUMS) : 0;
+}
+
+static void exchange_queue(uint8_t *state, const CoverFillRequest *request)
+{
+    if (request->queue.keys != NULL) {
+        cover_state_set_queue(state, request->queue.keys, request->queue.count);
+        return;
+    }
+    uint32_t count = cover_state_queue_count(state);
+    for (uint32_t index = 0; index < count && request->restored.keys != NULL; index++) {
+        request->restored.keys[index] = cover_state_queue_key(state, index);
+    }
+    if (request->restored.count != NULL) {
+        *request->restored.count = request->restored.keys != NULL ? count : 0;
+    }
+}
+
+static void prepare_state(RescanFiles *files, uint8_t *state, const CoverFillRequest *request)
+{
+    cover_state_store_load(state, fingerprint_of(files));
+    exchange_queue(state, request);
+    if (request->restart_when_done && cover_state_cursor(state) >= albums_of(files)) {
+        cover_state_set_cursor(state, 0);
+    }
+}
+
+static ScanResult fill_in(const LibraryScanEntry *entry, RescanFiles *files,
+                          const CoverFillRequest *request, CoverStats *stats)
+{
+    uint32_t size = 0;
+    uint8_t *memory = hal_system_borrow_scratch(&size);
+    if (memory == NULL || size <= STATE_ROOM) {
+        hal_system_return_scratch();
+        return SCAN_NO_SCRATCH;
+    }
+    prepare_state(files, memory, request);
+    bool previous = hal_file_open(&files->covers, COVER_CACHE_PATH);
+    ScanJob scan = {.files = {open_dir, next_entry, close_dir, open_file, close_file, files},
+                    .memory = memory,
+                    .size = size};
+    CoverJob job = cover_job(&scan, request->capacity, previous);
+    CoverPlan plan = {.budget = request->budget,
+                      .clock = {rescan_clock, NULL},
+                      .priority = request->priority,
+                      .priority_count = request->priority_count,
+                      .state = memory,
+                      .poll = request->poll};
+    ScanResult result = entry->fill(&job, &plan, stats);
+    (void)cover_state_store_save(memory);
+    if (previous) {
+        hal_file_close(&files->covers);
+    }
+    hal_system_return_scratch();
+    return result;
+}
+
+static ScanResult fill_with_code(RescanFiles *files, const CoverFillRequest *request,
+                                 CoverStats *stats)
+{
+    const LibraryScanEntry *entry = hal_system_load_rescan_code();
+    if (entry == NULL || entry->magic != LIBRARY_SCAN_MAGIC) {
+        return SCAN_NO_CODE;
+    }
+    return fill_in(entry, files, request, stats);
+}
+
+CoverFillOutcome library_rescan_fill(const CoverFillRequest *request)
+{
+    RescanFiles *files = rescan_files();
+    CoverFillOutcome outcome = {.result = SCAN_RESTART_NEEDED, .stats = {0}};
+    if (hal_system_restart_pending()) {
+        return outcome;
+    }
+    outcome.result = SCAN_NO_ROOM;
+    if (request->capacity == 0 || !hal_file_open(&files->library, LIBRARY_STORE_PATH)) {
+        return outcome;
+    }
+    bool facts = hal_file_open(&files->scratch, LIBRARY_SCRATCH_PATH);
+    files->scratch.size = facts ? files->scratch.size : 0;
+    files->progress = (RescanProgress){NULL, request->progress};
+    outcome.result = fill_with_code(files, request, &outcome.stats);
+    if (facts) {
+        hal_file_close(&files->scratch);
+    }
+    hal_file_close(&files->library);
+    return outcome;
+}
+
+uint32_t library_rescan_covers_capacity(void)
+{
+    return reserved_size_of(COVER_CACHE_PATH);
 }
 
 static const char *error_text(ScanResult result)
@@ -422,5 +527,21 @@ const char *library_rescan_message(RescanOutcome outcome, char *text, uint32_t c
     const char *arguments[] = {tracks, covers};
     StringBuilder builder = string_builder_make(text, capacity);
     i18n_format(&builder, library_pattern(outcome), arguments, 2);
+    return text;
+}
+
+const char *library_rescan_fill_message(CoverFillOutcome outcome, char *text, uint32_t capacity)
+{
+    if (outcome.result == SCAN_CANCELLED) {
+        return i18n_text(STR_COVERS_SCAN_STOPPED);
+    }
+    if (outcome.result != SCAN_OK) {
+        return error_text(outcome.result);
+    }
+    char decoded[NUMBER_CAPACITY];
+    number_text(decoded, sizeof decoded, outcome.stats.decoded);
+    const char *arguments[] = {decoded};
+    StringBuilder builder = string_builder_make(text, capacity);
+    i18n_format(&builder, STR_COVERS_SCAN_DONE, arguments, 1);
     return text;
 }

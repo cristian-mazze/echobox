@@ -185,6 +185,20 @@ static void auto_off_set_to_zero_never_shuts_down(void)
     CHECK(!power_policy_update(&policy, START_MS + 10 * AUTO_OFF_MS));
 }
 
+static void a_due_shutdown_is_seen_before_the_update(void)
+{
+    PowerPolicy policy;
+    power_policy_init(&policy, 30000, 0);
+    power_policy_set_auto_off(&policy, 60000, 0);
+    CHECK(!power_policy_shutdown_due(&policy, 59999));
+    CHECK(power_policy_shutdown_due(&policy, 60000));
+    power_policy_set_auto_off(&policy, 0, 0);
+    power_policy_start_sleep_timer(&policy, 1000, 0);
+    CHECK(!power_policy_shutdown_due(&policy, 999));
+    CHECK(power_policy_shutdown_due(&policy, 1000));
+    CHECK(policy.sleep_timer_active);
+}
+
 int main(void)
 {
     static const TestCase cases[] = {
@@ -206,6 +220,7 @@ int main(void)
         TEST_CASE(auto_off_shuts_down_after_its_time_without_activity),
         TEST_CASE(staying_awake_and_keys_restart_the_auto_off_count),
         TEST_CASE(auto_off_set_to_zero_never_shuts_down),
+        TEST_CASE(a_due_shutdown_is_seen_before_the_update),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));
 }

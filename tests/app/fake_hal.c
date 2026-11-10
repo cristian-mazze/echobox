@@ -123,6 +123,12 @@ typedef struct FakeHal {
     int bluetooth_disconnect_count;
     HalUsbMode usb_mode;
     uint8_t dac_volume;
+    int borrows_while_playing;
+    int read_count;
+    int reads_before_key;
+    HalKeyTransition key_after_reads;
+    uint32_t microseconds_at_borrow;
+    uint32_t microseconds_at_return;
 } FakeHal;
 
 static FakeHal fake;
@@ -186,6 +192,27 @@ void fake_hal_queue_transition(Key key, bool pressed, uint32_t time_ms)
     }
     fake.transitions[fake.transition_count++] =
         (HalKeyTransition){.key = key, .pressed = pressed, .time_ms = time_ms};
+}
+
+void fake_hal_press_after_reads(Key key, int reads)
+{
+    fake.key_after_reads = (HalKeyTransition){.key = key, .pressed = true, .time_ms = 0};
+    fake.reads_before_key = reads;
+}
+
+int fake_hal_read_count(void)
+{
+    return fake.read_count;
+}
+
+int fake_hal_borrows_while_playing(void)
+{
+    return fake.borrows_while_playing;
+}
+
+uint32_t fake_hal_scratch_held_us(void)
+{
+    return fake.microseconds_at_return - fake.microseconds_at_borrow;
 }
 
 uint16_t fake_hal_pixel(int x, int y)
@@ -315,8 +342,17 @@ bool hal_file_open(HalFile *file, const char *path)
     return false;
 }
 
+static void press_after_reads(void)
+{
+    if (fake.reads_before_key > 0 && --fake.reads_before_key == 0) {
+        fake_hal_queue_transition(fake.key_after_reads.key, true, fake.now_ms);
+    }
+}
+
 bool hal_file_read(HalFile file, uint32_t offset, void *buffer, uint32_t length)
 {
+    fake.read_count++;
+    press_after_reads();
     if (file.handle < 0 || file.handle >= fake.file_count) {
         return false;
     }
@@ -935,6 +971,8 @@ void *hal_system_borrow_scratch(uint32_t *size)
 {
     static uint8_t scratch[384 * 1024];
     fake.scratch_borrows++;
+    fake.borrows_while_playing += fake.audio.status.state == HAL_AUDIO_PLAYING;
+    fake.microseconds_at_borrow = fake_hal_microseconds();
     if (fake.scratch_refused) {
         *size = 0;
         return NULL;
@@ -946,6 +984,7 @@ void *hal_system_borrow_scratch(uint32_t *size)
 
 void hal_system_return_scratch(void)
 {
+    fake.microseconds_at_return = fake_hal_microseconds();
     if (!fake.scratch_refused) {
         fake.scratch_outstanding--;
     }

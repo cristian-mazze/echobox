@@ -161,6 +161,13 @@ echo_add_unit_test(NAME test_cover_cache
     LIBRARIES echo_app echo_library_fixtures
     PRIVATE_INCLUDES ${PROJECT_SOURCE_DIR}/src/app
 )
+foreach(fill_test cover_fill_policy cover_fill_scheduler)
+    echo_add_unit_test(NAME test_${fill_test}
+        SOURCES app/test_${fill_test}.c app/fake_hal.c
+        LIBRARIES echo_app echo_library_fixtures
+        PRIVATE_INCLUDES ${PROJECT_SOURCE_DIR}/src/app
+    )
+endforeach()
 echo_add_unit_test(NAME test_stores
     SOURCES app/test_stores.c app/fake_hal.c
     LIBRARIES echo_app echo_library_fixtures

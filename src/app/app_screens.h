@@ -97,6 +97,7 @@ typedef struct AppScreensContext {
     Toast *toast;
     CoverCache *covers;
     bool *rescan_requested;
+    bool *cover_scan_requested;
     SpokenStore *spoken;
     BluetoothLink *bluetooth;
     EqualizerStore *equalizer;

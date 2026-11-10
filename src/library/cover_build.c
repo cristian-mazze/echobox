@@ -354,20 +354,30 @@ static Placement swap_cover(CoverState *state, const CoverJob *job, uint32_t pos
     return rewritten ? PLACEMENT_DONE : PLACEMENT_FAILED;
 }
 
+static bool guard_stopped(const CoverGuard *guard)
+{
+    const CoverPlan *plan = guard->plan;
+    if (!*guard->cancelled && plan->poll.stopped != NULL) {
+        *guard->cancelled = plan->poll.stopped(plan->poll.context);
+    }
+    return *guard->cancelled || (plan->cancel != NULL && *plan->cancel);
+}
+
 static bool guarded_read(void *context, uint32_t offset, void *buffer, uint32_t length)
 {
     const CoverGuard *guard = context;
-    if (guard->cancel != NULL && *guard->cancel) {
-        return false;
-    }
-    return guard->inner.read(guard->inner.context, offset, buffer, length);
+    return !guard_stopped(guard) && guard->inner.read(guard->inner.context, offset, buffer, length);
+}
+
+static ByteSource guard(CoverState *state, CoverGuard *guard, ByteSource inner)
+{
+    *guard = (CoverGuard){.inner = inner, .plan = state->plan, .cancelled = &state->cancelled};
+    return (ByteSource){guarded_read, guard};
 }
 
 static void guard_art(CoverState *state, ArtFile *art)
 {
-    state->guard.inner = art->source;
-    state->guard.cancel = state->plan->cancel;
-    art->source = (ByteSource){guarded_read, &state->guard};
+    art->source = guard(state, &state->guard, art->source);
 }
 
 static bool decode_art(CoverState *state, const ArtFile *art)
@@ -549,7 +559,7 @@ bool cover_work_drop(CoverState *state)
 
 bool cover_work_cancelled(const CoverState *state)
 {
-    return state->plan->cancel != NULL && *state->plan->cancel;
+    return state->cancelled || (state->plan->cancel != NULL && *state->plan->cancel);
 }
 
 static uint32_t now_ms(const CoverState *state)
@@ -600,10 +610,16 @@ static CoverState *start(const CoverJob *job, uint32_t albums, CoverLayout layou
     return state;
 }
 
-static void begin(CoverState *state, const CoverPlan *plan, const Library *library)
+static void begin(CoverState *state, const CoverJob *job, const CoverPlan *plan,
+                  const Library *library)
 {
-    state->library = *library;
     state->plan = plan;
+    state->cancelled = false;
+    state->library = *library;
+    ByteSource guarded = guard(state, &state->library_guard, job->library);
+    if (library_open(&state->library, guarded, job->library_size) != LIBRARY_OK) {
+        state->library = *library;
+    }
     state->albums = library_count(library, LIBRARY_ALBUMS);
     state->anchor = COVER_WORK_NO_ALBUM;
     state->attempts = 0;
@@ -628,7 +644,7 @@ CoverState *cover_work_start(const CoverJob *job, const CoverPlan *plan, CoverSt
     if (state == NULL || (layout.slots == 0 && stats->albums > 0)) {
         return NULL;
     }
-    begin(state, plan, &probe);
+    begin(state, job, plan, &probe);
     art_facts_load(&state->facts, job->scratch, job->scratch_size,
                    library_count(&probe, LIBRARY_TRACKS));
     *result = SCAN_OK;

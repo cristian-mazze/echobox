@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 
+#include "cover_cache.h"
 #include "favorites_store.h"
 #include "library/favorites.h"
 #include "library/library_browse.h"
@@ -20,7 +21,8 @@ enum {
     BROWSE_LABEL_CAPACITY = 128,
     BROWSE_DETAIL_CAPACITY = 16,
     BROWSE_TITLE_CAPACITY = 96,
-    SONG_ACTION_COUNT = 2
+    SONG_ACTION_COUNT = 2,
+    BROWSE_COVER_NOTE_MS = 600
 };
 
 typedef struct BrowseRows {
@@ -48,6 +50,7 @@ typedef struct BrowseScreen {
     ListModel model;
     ListView list;
     uint32_t now_ms;
+    int noted;
 } BrowseScreen;
 
 typedef struct BrowsePoolConfig {
@@ -58,6 +61,7 @@ typedef struct BrowsePoolConfig {
     FavoritesStore *favorites;
     Toast *toast;
     SpokenStore *spoken;
+    CoverCache *covers;
 } BrowsePoolConfig;
 
 typedef struct SongActions {

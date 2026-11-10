@@ -150,6 +150,11 @@ static ScanResult fill_album(CoverState *state, const CoverJob *job, CoverStats 
     return cover_work_decode(state, job, stats);
 }
 
+static ScanResult unless_cancelled(const CoverState *state, ScanResult result)
+{
+    return result == SCAN_OK && cover_work_cancelled(state) ? SCAN_CANCELLED : result;
+}
+
 static ScanResult fill_priority(CoverState *state, const CoverJob *job, CoverStats *stats)
 {
     ScanResult result = SCAN_OK;
@@ -158,7 +163,7 @@ static ScanResult fill_priority(CoverState *state, const CoverJob *job, CoverSta
          index++) {
         result = fill_album(state, job, stats, state->plan->priority[index]);
     }
-    return result;
+    return unless_cancelled(state, result);
 }
 
 static ScanResult fill_from_cursor(CoverState *state, const CoverJob *job, CoverStats *stats)
@@ -172,6 +177,7 @@ static ScanResult fill_from_cursor(CoverState *state, const CoverJob *job, Cover
         cover_work_report(job, position, state->albums);
         result = album_at(state, order, position, &album) ? fill_album(state, job, stats, album)
                                                           : SCAN_OK;
+        result = unless_cancelled(state, result);
         position += result == SCAN_OK ? 1u : 0u;
     }
     if (saved != NULL) {

@@ -366,13 +366,31 @@ static ScreenAction request_rescan(void *context)
     return screen_action_none();
 }
 
+static ScreenAction request_cover_scan(void *context)
+{
+    SettingsContext *settings = context;
+    if (settings->cover_scan_requested != NULL) {
+        *settings->cover_scan_requested = true;
+    }
+    return screen_action_none();
+}
+
+static void place_actions(SettingsScreens *screens)
+{
+    screens->items[SETTINGS_RESCAN_ITEM] = (MenuItem){.label = i18n_text(STR_SETTINGS_RESCAN),
+                                                      .select = request_rescan,
+                                                      .context = &screens->context};
+    screens->items[SETTINGS_SCAN_COVERS_ITEM] =
+        (MenuItem){.label = i18n_text(STR_SETTINGS_SCAN_COVERS),
+                   .select = request_cover_scan,
+                   .context = &screens->context};
+}
+
 Screen *settings_screens_init(SettingsScreens *screens, SettingsContext context, const Theme *theme)
 {
     screens->context = context;
     screens->theme = theme;
-    screens->items[SETTINGS_RESCAN_ITEM] = (MenuItem){.label = i18n_text(STR_SETTINGS_RESCAN),
-                                                      .select = request_rescan,
-                                                      .context = &screens->context};
+    place_actions(screens);
     screens->items[SETTINGS_BLUETOOTH_ITEM] = (MenuItem){.label = i18n_text(STR_BT_TITLE),
                                                          .select = bluetooth_screen_open,
                                                          .context = context.bluetooth,
@@ -387,7 +405,7 @@ Screen *settings_screens_init(SettingsScreens *screens, SettingsContext context,
         screens->entries[index] = (SettingsEntry){.choice = &CHOICES[index], .owner = screens};
         int item = index < SETTINGS_BLUETOOTH_ITEM ? index : index + 1;
         item = item < SETTINGS_EQUALIZER_ITEM ? item : item + 1;
-        item = item < SETTINGS_RESCAN_ITEM ? item : item + 1;
+        item = item < SETTINGS_RESCAN_ITEM ? item : item + 2;
         screens->items[item] = (MenuItem){.label = i18n_text(CHOICES[index].title),
                                           .select = open_choice,
                                           .context = &screens->entries[index],

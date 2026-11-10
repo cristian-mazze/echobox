@@ -30,7 +30,8 @@ typedef struct ExpectedArt {
 
 typedef struct CoverGuard {
     ByteSource inner;
-    const bool *cancel;
+    const CoverPlan *plan;
+    bool *cancelled;
 } CoverGuard;
 
 typedef struct CoverState {
@@ -44,6 +45,8 @@ typedef struct CoverState {
     ArtFacts facts;
     ExpectedArt expected;
     CoverGuard guard;
+    CoverGuard library_guard;
+    bool cancelled;
     const CoverPlan *plan;
     uint16_t full[COVER_FULL_PIXELS];
     uint16_t half[COVER_HALF_PIXELS];

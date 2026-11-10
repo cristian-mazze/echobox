@@ -34,6 +34,8 @@ typedef struct CoverCache {
     CoverSlot halves[COVER_CACHE_SLOTS];
     uint16_t full_album;
     CoverState full_state;
+    bool missed;
+    uint16_t missed_album;
     Color full[COVER_FULL_PIXELS];
 } CoverCache;
 
@@ -44,3 +46,7 @@ CoverState cover_cache_half(const CoverCache *cache, int position, uint16_t albu
 CoverState cover_cache_full(const CoverCache *cache, uint16_t album, Image *image);
 bool cover_cache_load_half(CoverCache *cache, int position, uint16_t album);
 bool cover_cache_load_full(CoverCache *cache, uint16_t album);
+void cover_cache_refresh(CoverCache *cache);
+bool cover_cache_has(CoverCache *cache, uint16_t album);
+void cover_cache_note_album(CoverCache *cache, uint16_t album);
+bool cover_cache_take_missed(CoverCache *cache, uint16_t *album);

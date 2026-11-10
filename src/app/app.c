@@ -13,6 +13,7 @@
 #include "core/power_policy.h"
 #include "core/string_builder.h"
 #include "cover_cache.h"
+#include "cover_filler.h"
 #include "default_theme.h"
 #include "draw_profile.h"
 #include "equalizer_store.h"
@@ -104,7 +105,9 @@ typedef struct AppState {
     uint32_t battery_check_ms;
     bool usb_power;
     bool rescan_requested;
+    bool cover_scan_requested;
     bool music_check_requested;
+    CoverFiller filler;
     bool light_after_frame;
     bool frame_changed;
     bool frame_stable;
@@ -208,10 +211,12 @@ static Key oriented_key(HalKeyTransition transition)
     return rocker_key(transition.key, app.rocker_swapped[transition.key]);
 }
 
-static void read_input(void)
+static bool read_input(void)
 {
     HalKeyTransition transition;
+    bool arrived = false;
     while (hal_input_next_transition(&transition)) {
+        arrived = true;
         Key key = oriented_key(transition);
         if (transition.pressed) {
             key_tracker_key_down(&app.keys, key, transition.time_ms);
@@ -219,6 +224,7 @@ static void read_input(void)
             key_tracker_key_up(&app.keys, key, transition.time_ms);
         }
     }
+    return arrived;
 }
 
 static void use_screen_key_behaviors(void);
@@ -739,6 +745,7 @@ static void build_screens(uint32_t now_ms)
         .toast = &app.toast,
         .covers = &app.covers,
         .rescan_requested = &app.rescan_requested,
+        .cover_scan_requested = &app.cover_scan_requested,
         .bluetooth = &app.bluetooth,
         .equalizer = &app.equalizer,
     };
@@ -808,6 +815,8 @@ void app_start(void)
     app.idle = false;
     app.saying_goodbye = false;
     app.goodbye_text = GOODBYE_TEXT;
+    app.cover_scan_requested = false;
+    cover_filler_start(&app.filler, now_ms);
     low_battery_init(&app.low_battery);
     app.battery_check_ms = now_ms;
     app.splash = (Fade){.active = false};
@@ -908,6 +917,51 @@ static void run_rescan(void)
     toast_show(&app.toast, text, hal_clock_milliseconds());
 }
 
+static bool input_arrived(void *context)
+{
+    (void)context;
+    return read_input();
+}
+
+static CoverFillerLinks filler_links(void)
+{
+    return (CoverFillerLinks){.player = &app.player,
+                              .covers = &app.covers,
+                              .library = &app.library.library,
+                              .power = &app.power,
+                              .input_arrived = input_arrived,
+                              .context = NULL};
+}
+
+static void run_cover_scan(void)
+{
+    if (player_status(&app.player).state == PLAYER_PLAYING) {
+        player_toggle_pause(&app.player);
+    }
+    app_release_audio();
+    app_show_notice(i18n_text(STR_RESCAN_COVERS_TITLE), i18n_text(STR_RESCAN_STARTING));
+    CoverFillerLinks links = filler_links();
+    CoverFillOutcome outcome = cover_filler_run_all(&app.filler, &links, show_cover_progress);
+    static char message[MESSAGE_TEXT_CAPACITY];
+    const char *text = library_rescan_fill_message(outcome, message, sizeof message);
+    app_wake();
+    toast_show(&app.toast, text, hal_clock_milliseconds());
+}
+
+static void fill_covers_when_idle(uint32_t now_ms)
+{
+    CoverFillerWorld world = {.display_on = app.display_on,
+                              .rescan_waiting = app.rescan_requested || app.music_check_requested ||
+                                                app.cover_scan_requested};
+    if (app.charging || app.saying_goodbye || !cover_filler_due(&app.filler, world, now_ms)) {
+        return;
+    }
+    CoverFillerLinks links = filler_links();
+    app_release_audio();
+    (void)cover_filler_run_idle(&app.filler, &links);
+    use_wanted_clock();
+}
+
 void app_release_audio(void)
 {
     spoken_store_flush(&app.spoken, player_status(&app.player), hal_clock_milliseconds());
@@ -998,6 +1052,11 @@ void app_step(void)
         run_rescan();
         return;
     }
+    if (app.cover_scan_requested) {
+        app.cover_scan_requested = false;
+        run_cover_scan();
+        return;
+    }
     uint32_t started_us = hal_clock_microseconds();
     uint32_t now_ms = hal_clock_milliseconds();
     app.now_ms = now_ms;
@@ -1025,6 +1084,11 @@ void app_step(void)
         spoken_store_follow(&app.spoken, player_status(&app.player), now_ms);
         explain_refusals(now_ms);
         update_power(now_ms);
+    }
+    if (!app.powered_off) {
+        CoverFillerLinks links = filler_links();
+        cover_filler_follow(&app.filler, &links, now_ms);
+        fill_covers_when_idle(now_ms);
     }
     if (app.powered_off) {
         return;

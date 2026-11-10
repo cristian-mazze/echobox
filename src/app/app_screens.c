@@ -114,6 +114,7 @@ static void build_music(AppScreens *screens, AppScreensContext context)
         .favorites = context.favorites,
         .toast = context.toast,
         .spoken = context.spoken,
+        .covers = context.covers,
     };
     browse_pool_init(&screens->browse, browse);
     CoverFlowConfig cover_flow = {
@@ -141,6 +142,7 @@ static void build_settings(AppScreens *screens, AppScreensContext context)
         .power = context.power,
         .toast = context.toast,
         .rescan_requested = context.rescan_requested,
+        .cover_scan_requested = context.cover_scan_requested,
         .bluetooth = &screens->bluetooth,
         .equalizer = &screens->equalizer,
         .sleep_option = 0,

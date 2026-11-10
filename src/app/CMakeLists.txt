@@ -6,6 +6,9 @@ add_library(echo_app STATIC
     bluetooth_store.c
     browse_screen.c
     cover_cache.c
+    cover_fill_policy.c
+    cover_filler.c
+    cover_queue.c
     cover_state_store.c
     default_theme.c
     favorites_store.c

@@ -21,6 +21,7 @@ void cover_cache_open(CoverCache *cache, const Library *library)
 {
     cache->library = library;
     cache->available = false;
+    cache->missed = false;
     clear_slots(cache);
     if (!hal_file_open(&cache->file, COVER_CACHE_PATH)) {
         return;
@@ -94,5 +95,42 @@ bool cover_cache_load_full(CoverCache *cache, uint16_t album)
     }
     cache->full_album = album;
     cache->full_state = read_cover(cache, album, COVER_FULL, cache->full);
+    if (cache->full_state == COVER_MISSING) {
+        cache->missed = true;
+        cache->missed_album = album;
+    }
+    return true;
+}
+
+void cover_cache_refresh(CoverCache *cache)
+{
+    if (cache->available) {
+        hal_file_close(&cache->file);
+    }
+    cover_cache_open(cache, cache->library);
+}
+
+bool cover_cache_has(CoverCache *cache, uint16_t album)
+{
+    uint32_t record = 0;
+    return cache->available &&
+           covers_find(&cache->covers, library_album_key(cache->library, album), &record);
+}
+
+void cover_cache_note_album(CoverCache *cache, uint16_t album)
+{
+    if (!cover_cache_has(cache, album)) {
+        cache->missed = true;
+        cache->missed_album = album;
+    }
+}
+
+bool cover_cache_take_missed(CoverCache *cache, uint16_t *album)
+{
+    if (!cache->missed) {
+        return false;
+    }
+    cache->missed = false;
+    *album = cache->missed_album;
     return true;
 }

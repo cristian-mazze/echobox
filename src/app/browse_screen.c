@@ -508,11 +508,26 @@ static void enter(void *context, uint32_t now_ms)
     refresh_rows(browse);
 }
 
+static void note_resting_album(BrowseScreen *browse, uint32_t now_ms)
+{
+    CoverCache *covers = browse->pool->config.covers;
+    BrowseItem item;
+    int selected = browse->list.selected;
+    if (covers == NULL || browse->count == 0 || browse->noted == selected ||
+        now_ms - browse->list.selection_changed_ms < BROWSE_COVER_NOTE_MS ||
+        !item_at(browse, selected, &item) || item.kind != BROWSE_ITEM_ALBUM) {
+        return;
+    }
+    browse->noted = selected;
+    cover_cache_note_album(covers, (uint16_t)item.index);
+}
+
 static void update(void *context, uint32_t now_ms)
 {
     BrowseScreen *browse = context;
     browse->now_ms = now_ms;
     refresh_rows(browse);
+    note_resting_album(browse, now_ms);
 }
 
 static void draw_empty(Canvas *canvas, const Theme *theme, Rect content, const char *message)
@@ -569,6 +584,7 @@ Screen *browse_pool_open(BrowsePool *pool, int level, BrowseQuery query)
     browse->favorites_only = false;
     browse->shelf = SPOKEN_NONE;
     browse->shelf_root = false;
+    browse->noted = -1;
     browse->count = browse_count(pool->config.library, query);
     browse_title(pool->config.library, query, browse->title, sizeof browse->title);
     browse->model = (ListModel){.context = browse,

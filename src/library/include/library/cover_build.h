@@ -43,6 +43,11 @@ typedef struct CoverBudget {
     uint32_t max_albums;
 } CoverBudget;
 
+typedef struct CoverPoll {
+    bool (*stopped)(void *context);
+    void *context;
+} CoverPoll;
+
 typedef struct CoverPlan {
     CoverBudget budget;
     CoverClock clock;
@@ -52,6 +57,7 @@ typedef struct CoverPlan {
     uint32_t anchor_key;
     uint8_t *state;
     const bool *cancel;
+    CoverPoll poll;
 } CoverPlan;
 
 typedef struct CoverStats {
