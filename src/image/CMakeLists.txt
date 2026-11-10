@@ -1,5 +1,6 @@
 add_library(echo_image STATIC
     cover_grid.c
+    cover_grid_rolling.c
     cover_image.c
     cover_render.c
     image_arena.c

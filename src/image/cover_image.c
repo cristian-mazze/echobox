@@ -27,8 +27,11 @@ CoverImageResult cover_image_decode(ImageSource source, void *memory, uint32_t s
 {
     ImageArena arena = image_arena_make(memory, size);
     ImageReader reader;
-    CoverImage image = {.grid = image_arena_take(&arena, sizeof(CoverGrid)),
+    CoverImage image = {.grid = image_arena_take(&arena, cover_grid_bytes(COVER_GRID_SIZE)),
                         .color = COVER_COLOR_GRAY};
+    if (image.grid != NULL) {
+        cover_grid_begin(image.grid, COVER_GRID_SIZE);
+    }
     if (image.grid == NULL || !image_reader_init(&reader, source, &arena)) {
         return COVER_IMAGE_NO_MEMORY;
     }

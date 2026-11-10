@@ -20,7 +20,8 @@ static uint16_t rgb565(uint32_t red, uint32_t green, uint32_t blue)
 
 static CoverGrid *new_grid(uint32_t width, uint32_t height)
 {
-    CoverGrid *grid = malloc(sizeof *grid);
+    CoverGrid *grid = malloc(cover_grid_bytes(COVER_GRID_SIZE));
+    cover_grid_begin(grid, COVER_GRID_SIZE);
     CHECK(cover_grid_init(grid, width, height));
     return grid;
 }

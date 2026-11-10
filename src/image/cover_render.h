@@ -14,3 +14,5 @@ typedef struct CoverRowCells {
 
 void cover_render_full_row(const CoverRowCells *cells, CoverColor color, uint16_t *out);
 void cover_render_half_row(const CoverRowCells *cells, CoverColor color, uint16_t *out);
+
+CoverRowCells cover_grid_row_cells(CoverGrid *grid, uint32_t cell_row);

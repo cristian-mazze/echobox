@@ -15,6 +15,23 @@ typedef struct CoverSpan {
     uint16_t weights[CELLS];
 } CoverSpan;
 
+void cover_grid_begin(CoverGrid *grid, uint32_t ring_rows)
+{
+    grid->ring_rows = ring_rows;
+    grid->reach = NULL;
+    grid->reach_context = NULL;
+}
+
+int32_t *cover_grid_cell_row(CoverGrid *grid, uint32_t channel, uint32_t row)
+{
+    return grid->sums + (channel * grid->ring_rows + row % grid->ring_rows) * CELLS;
+}
+
+bool cover_grid_reach(CoverGrid *grid, uint32_t y, CoverColor color)
+{
+    return grid->reach == NULL || grid->reach(grid, y, color);
+}
+
 bool cover_grid_init(CoverGrid *grid, uint32_t width, uint32_t height)
 {
     if (width == 0 || height == 0 || width > COVER_GRID_LIMIT || height > COVER_GRID_LIMIT) {
@@ -26,8 +43,9 @@ bool cover_grid_init(CoverGrid *grid, uint32_t width, uint32_t height)
     for (uint32_t channel = 0; channel < COVER_GRID_CHANNELS; channel++) {
         grid->sample_width[channel] = 1;
         grid->sample_height[channel] = 1;
-        for (uint32_t cell = 0; cell < COVER_GRID_CELLS; cell++) {
-            grid->sums[channel][cell] = 0;
+        int32_t *cells = cover_grid_cell_row(grid, channel, 0);
+        for (uint32_t cell = 0; cell < grid->ring_rows * CELLS; cell++) {
+            cells[cell] = 0;
         }
     }
     return true;
@@ -75,7 +93,7 @@ static void add_spans(CoverGrid *grid, uint32_t channel, const CoverSpan *x, con
                       int32_t value)
 {
     for (uint32_t row = 0; row < y->count; row++) {
-        int32_t *sums = grid->sums[channel] + (y->first + row) * CELLS + x->first;
+        int32_t *sums = cover_grid_cell_row(grid, channel, y->first + row) + x->first;
         int32_t row_value = value * (int32_t)y->weights[row];
         for (uint32_t column = 0; column < x->count; column++) {
             int32_t product = row_value * (int32_t)x->weights[column];
@@ -162,7 +180,7 @@ void cover_grid_row_finish(CoverGrid *grid, uint32_t y, uint32_t channels)
     axis_span(grid->start_y, grid->span, y, 1, &rows);
     for (uint32_t row = 0; row < rows.count; row++) {
         for (uint32_t channel = 0; channel < channels; channel++) {
-            int32_t *sums = grid->sums[channel] + (rows.first + row) * CELLS;
+            int32_t *sums = cover_grid_cell_row(grid, channel, rows.first + row);
             const int32_t *values = grid->row[channel];
             for (uint32_t cell = 0; cell < CELLS; cell++) {
                 int32_t product = values[cell] * (int32_t)rows.weights[row];
@@ -197,13 +215,13 @@ void cover_grid_prepare_render(CoverGrid *grid, CoverColor color)
     }
 }
 
-static CoverRowCells row_cells(const CoverGrid *grid, uint32_t cell_row)
+CoverRowCells cover_grid_row_cells(CoverGrid *grid, uint32_t cell_row)
 {
     CoverRowCells cells;
     uint32_t below = cell_row + 1 < CELLS ? cell_row + 1 : cell_row;
     for (uint32_t channel = 0; channel < COVER_GRID_CHANNELS; channel++) {
-        cells.top[channel] = grid->sums[channel] + cell_row * CELLS;
-        cells.bottom[channel] = grid->sums[channel] + below * CELLS;
+        cells.top[channel] = cover_grid_cell_row(grid, channel, cell_row);
+        cells.bottom[channel] = cover_grid_cell_row(grid, channel, below);
         cells.totals_x[channel] = grid->totals_x[channel];
         cells.totals_top[channel] = grid->totals_y[channel][cell_row];
         cells.totals_bottom[channel] = grid->totals_y[channel][below];
@@ -211,15 +229,15 @@ static CoverRowCells row_cells(const CoverGrid *grid, uint32_t cell_row)
     return cells;
 }
 
-void cover_grid_render_row(const CoverGrid *grid, CoverColor color, uint32_t y, uint16_t *out)
+void cover_grid_render_row(CoverGrid *grid, CoverColor color, uint32_t y, uint16_t *out)
 {
-    CoverRowCells cells = row_cells(grid, y);
+    CoverRowCells cells = cover_grid_row_cells(grid, y);
     cover_render_full_row(&cells, color, out);
 }
 
-void cover_grid_render_half_row(const CoverGrid *grid, CoverColor color, uint32_t y, uint16_t *out)
+void cover_grid_render_half_row(CoverGrid *grid, CoverColor color, uint32_t y, uint16_t *out)
 {
-    CoverRowCells cells = row_cells(grid, 2 * y);
+    CoverRowCells cells = cover_grid_row_cells(grid, 2 * y);
     cover_render_half_row(&cells, color, out);
 }
 
