@@ -29,6 +29,15 @@ enum {
     TIME_SLOTS = RESCAN_PASSES * TIME_KINDS
 };
 
+enum {
+    TIMES_VERSION = 1,
+    TIMES_VERSION_FIELD = 4,
+    TIMES_SPENT_FIELD = 8,
+    TIMES_COVERS_FIELD = TIMES_SPENT_FIELD + TIME_SLOTS * 2 * 4,
+    TIMES_COVER_COUNTERS = 5,
+    TIMES_BYTES = TIMES_COVERS_FIELD + TIMES_COVER_COUNTERS * 4
+};
+
 static uint32_t spent[TIME_SLOTS * 2];
 static uint32_t pass;
 
@@ -185,7 +194,7 @@ static ScanResult build_covers(const LibraryScanEntry *entry, const ScanJob *sca
 {
     RescanFiles *files = scan->files.context;
     uint32_t capacity = reserved_size_of(COVER_CACHE_PATH);
-    *stats = (CoverStats){.albums = 0, .covers = 0, .reused = 0, .missing = 0};
+    *stats = (CoverStats){.albums = 0, .covers = 0, .reused = 0, .missing = 0, .decoded = 0};
     if (capacity == 0) {
         return SCAN_NO_ROOM;
     }
@@ -212,6 +221,33 @@ static ScanResult build_covers(const LibraryScanEntry *entry, const ScanJob *sca
     return result;
 }
 
+static void put_times_u32(uint8_t *bytes, uint32_t value)
+{
+    for (uint32_t index = 0; index < 4; index++) {
+        bytes[index] = (uint8_t)(value >> (index * 8));
+    }
+}
+
+static void pack_cover_counters(const CoverStats *covers, uint8_t *bytes)
+{
+    const uint32_t counters[TIMES_COVER_COUNTERS] = {covers->albums, covers->covers, covers->reused,
+                                                     covers->missing, covers->decoded};
+    for (uint32_t index = 0; index < TIMES_COVER_COUNTERS; index++) {
+        put_times_u32(bytes + index * 4, counters[index]);
+    }
+}
+
+static void save_times(const CoverStats *covers)
+{
+    uint8_t bytes[TIMES_BYTES] = {'E', 'M', 'R', 'T'};
+    bytes[TIMES_VERSION_FIELD] = TIMES_VERSION;
+    for (uint32_t slot = 0; slot < TIME_SLOTS * 2; slot++) {
+        put_times_u32(bytes + TIMES_SPENT_FIELD + slot * 4, spent[slot]);
+    }
+    pack_cover_counters(covers, bytes + TIMES_COVERS_FIELD);
+    (void)hal_file_write(RESCAN_TIMES_PATH, bytes, sizeof bytes);
+}
+
 static void run_passes(const LibraryScanEntry *entry, const ScanJob *job, RescanOutcome *outcome)
 {
     for (uint32_t slot = 0; slot < TIME_SLOTS * 2; slot++) {
@@ -227,7 +263,7 @@ static void run_passes(const LibraryScanEntry *entry, const ScanJob *job, Rescan
         outcome->cover_result = build_covers(entry, job, &outcome->covers);
         spend(TIME_TOTAL, since);
     }
-    (void)hal_file_write(RESCAN_TIMES_PATH, spent, sizeof spent);
+    save_times(&outcome->covers);
 }
 
 RescanOutcome library_rescan_run(RescanProgress progress)

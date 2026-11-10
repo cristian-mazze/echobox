@@ -573,6 +573,7 @@ static ScanResult place_cover(CoverState *state, const CoverJob *job, const ArtF
     if (!write_record(state, job, state->layout.records_start + slot * COVER_BUILD_RECORD_BYTES)) {
         return SCAN_WRITE_FAILED;
     }
+    stats->decoded++;
     position = known ? position : append_entry(state, slot);
     state->index[position] = (CoverEntry){state->key, art->stamp};
     set_bit(state->claimed, position);
@@ -718,7 +719,7 @@ static CoverState *start(const CoverJob *job, uint32_t albums, CoverLayout layou
 
 ScanResult cover_build(const CoverJob *job, CoverStats *stats)
 {
-    *stats = (CoverStats){.albums = 0, .covers = 0, .reused = 0, .missing = 0};
+    *stats = (CoverStats){.albums = 0, .covers = 0, .reused = 0, .missing = 0, .decoded = 0};
     Library probe;
     if (library_open(&probe, job->library, job->library_size) != LIBRARY_OK) {
         return SCAN_NO_MUSIC_ROOT;

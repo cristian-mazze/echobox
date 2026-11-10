@@ -96,11 +96,15 @@ echo_add_unit_test(NAME test_track_tags
     LIBRARIES echo_library_fixtures
 )
 target_compile_definitions(test_track_tags PRIVATE ECHO_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
-echo_add_unit_test(NAME test_cover_build
-    SOURCES library/test_cover_build.c
-    LIBRARIES echo_library_scan
-)
-target_compile_definitions(test_cover_build PRIVATE ECHO_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+foreach(cover_test cover_build cover_build_large)
+    echo_add_unit_test(NAME test_${cover_test}
+        SOURCES library/test_${cover_test}.c library/cover_png.c
+        LIBRARIES echo_library_scan
+    )
+    target_compile_definitions(test_${cover_test} PRIVATE
+        ECHO_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+    )
+endforeach()
 
 echo_add_unit_test(NAME test_screen_stack SOURCES ui/test_screen_stack.c LIBRARIES echo_ui)
 echo_add_unit_test(NAME test_navigation SOURCES ui/test_navigation.c LIBRARIES echo_ui)

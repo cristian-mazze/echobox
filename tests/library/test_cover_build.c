@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "check.h"
+#include "cover_png.h"
 #include "library/cover_build.h"
 #include "library/covers.h"
 #include "library/library.h"
@@ -11,23 +12,12 @@
 enum {
     MAX_FILES = 16,
     PATH_CAPACITY = 64,
-    COVER_SIDE = 112,
-    PNG_ROW = 1 + COVER_SIDE * 3,
-    PNG_RAW = COVER_SIDE * PNG_ROW,
-    PNG_CAPACITY = PNG_RAW + 128,
     MEMORY_SIZE = 384 * 1024,
     LIBRARY_CAPACITY = 4 * 1024 * 1024,
     COVERS_CAPACITY = 1024 * 1024,
     SCRATCH_SIZE = 16 * 1024 * 1024,
     RECORD_SLOT = 8 + 4 + COVER_BUILD_RECORD_BYTES
 };
-
-typedef struct Color {
-    uint8_t red;
-    uint8_t green;
-    uint8_t blue;
-    uint16_t pixel;
-} Color;
 
 static const Color RED = {255, 0, 0, 0xF800};
 static const Color GREEN = {0, 255, 0, 0x07E0};
@@ -47,7 +37,7 @@ typedef struct Card {
     ScanEntry listing[MAX_FILES];
     uint32_t listed;
     uint32_t cursor;
-    uint8_t pngs[MAX_FILES][PNG_CAPACITY];
+    uint8_t pngs[MAX_FILES][COVER_PNG_CAPACITY];
     uint32_t png_count;
     uint8_t *flac;
     uint32_t flac_size;
@@ -174,73 +164,6 @@ static bool buffer_write(void *context, uint32_t offset, const void *bytes, uint
     return true;
 }
 
-static uint8_t *put_be32(uint8_t *at, uint32_t value)
-{
-    at[0] = (uint8_t)(value >> 24);
-    at[1] = (uint8_t)(value >> 16);
-    at[2] = (uint8_t)(value >> 8);
-    at[3] = (uint8_t)value;
-    return at + 4;
-}
-
-static uint8_t *put_chunk_start(uint8_t *at, uint32_t length, const char *type)
-{
-    at = put_be32(at, length);
-    memcpy(at, type, 4);
-    return at + 4;
-}
-
-static uint32_t adler32(const uint8_t *bytes, uint32_t length)
-{
-    uint32_t low = 1;
-    uint32_t high = 0;
-    for (uint32_t index = 0; index < length; index++) {
-        low = (low + bytes[index]) % 65521u;
-        high = (high + low) % 65521u;
-    }
-    return high << 16 | low;
-}
-
-static void fill_rows(uint8_t *raw, Color color)
-{
-    for (uint32_t row = 0; row < COVER_SIDE; row++) {
-        uint8_t *line = raw + row * PNG_ROW;
-        line[0] = 0;
-        for (uint32_t column = 0; column < COVER_SIDE; column++) {
-            line[1 + column * 3] = color.red;
-            line[2 + column * 3] = color.green;
-            line[3 + column * 3] = color.blue;
-        }
-    }
-}
-
-static uint32_t make_png(uint8_t *png, Color color)
-{
-    static uint8_t raw[PNG_RAW];
-    static const uint8_t SIGNATURE[8] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
-    static const uint8_t HEADER_TAIL[5] = {8, 2, 0, 0, 0};
-    static const uint8_t STORED[7] = {0x78,
-                                      0x01,
-                                      0x01,
-                                      PNG_RAW & 0xFF,
-                                      PNG_RAW >> 8,
-                                      (uint8_t)~PNG_RAW,
-                                      (uint8_t)(~PNG_RAW >> 8)};
-    fill_rows(raw, color);
-    uint8_t *at = png;
-    memcpy(at, SIGNATURE, sizeof SIGNATURE);
-    at = put_chunk_start(at + sizeof SIGNATURE, 13, "IHDR");
-    at = put_be32(put_be32(at, COVER_SIDE), COVER_SIDE);
-    memcpy(at, HEADER_TAIL, sizeof HEADER_TAIL);
-    at = put_be32(at + sizeof HEADER_TAIL, 0);
-    at = put_chunk_start(at, sizeof STORED + PNG_RAW + 4, "IDAT");
-    memcpy(at, STORED, sizeof STORED);
-    memcpy(at + sizeof STORED, raw, PNG_RAW);
-    at = put_be32(put_be32(at + sizeof STORED + PNG_RAW, adler32(raw, PNG_RAW)), 0);
-    at = put_be32(put_chunk_start(at, 0, "IEND"), 0);
-    return (uint32_t)(at - png);
-}
-
 static uint8_t *read_fixture(const char *name, uint32_t *size)
 {
     char path[512];
@@ -272,7 +195,7 @@ static void add_album(const char *album, Color color)
     snprintf(path, sizeof path, "/%s/01.flac", album);
     add_file(path, card.flac, card.flac_size);
     snprintf(path, sizeof path, "/%s/cover.png", album);
-    add_file(path, png, make_png(png, color));
+    add_file(path, png, cover_png_make(png, color));
 }
 
 static CardFile *find_file(const char *path)
@@ -292,7 +215,7 @@ static void replace_cover(const char *album, Color color)
     CardFile *file = find_file(path);
     CHECK(file != NULL);
     uint8_t *png = card.pngs[card.png_count++];
-    file->size = make_png(png, color);
+    file->size = cover_png_make(png, color);
     file->bytes = png;
     file->modified++;
 }

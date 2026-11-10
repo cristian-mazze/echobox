@@ -34,6 +34,7 @@ typedef struct CoverStats {
     uint32_t covers;
     uint32_t reused;
     uint32_t missing;
+    uint32_t decoded;
 } CoverStats;
 
 ScanResult cover_build(const CoverJob *job, CoverStats *stats);
