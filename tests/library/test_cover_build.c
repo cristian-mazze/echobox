@@ -54,6 +54,15 @@ static Buffer covers_file;
 static Buffer scratch_file;
 static uint32_t covers_capacity = COVERS_CAPACITY;
 
+typedef struct CutSink {
+    int32_t left;
+    uint32_t writes;
+    bool failed;
+    uint32_t failed_at;
+} CutSink;
+
+static CutSink cut_sink = {.left = -1};
+
 static bool child_of(const char *dir, const char *path, char *name, bool *directory)
 {
     size_t length = strlen(dir);
@@ -164,6 +173,18 @@ static bool buffer_write(void *context, uint32_t offset, const void *bytes, uint
     return true;
 }
 
+static bool covers_write(void *context, uint32_t offset, const void *bytes, uint32_t length)
+{
+    cut_sink.writes++;
+    if (cut_sink.left == 0) {
+        cut_sink.failed_at = cut_sink.failed ? cut_sink.failed_at : offset;
+        cut_sink.failed = true;
+        return false;
+    }
+    cut_sink.left -= cut_sink.left > 0 ? 1 : 0;
+    return buffer_write(context, offset, bytes, length);
+}
+
 static uint8_t *read_fixture(const char *name, uint32_t *size)
 {
     char path[512];
@@ -265,7 +286,7 @@ static ScanResult rescan(bool keep, CoverStats *stats)
     CoverJob job = {.files = files,
                     .library = {buffer_read, &library_file},
                     .library_size = LIBRARY_CAPACITY,
-                    .sink = {buffer_write, &covers_file},
+                    .sink = {covers_write, &covers_file},
                     .previous = {keep ? buffer_read : NULL, &covers_file},
                     .capacity = covers_capacity,
                     .memory = memory,
@@ -434,6 +455,149 @@ static void without_a_previous_file_everything_is_decoded(void)
     CHECK_EQUAL(0u, stats.reused);
 }
 
+static const Color YELLOW = {255, 255, 0, 0xFFE0};
+static const Color CYAN = {0, 255, 255, 0x07FF};
+static const Color MAGENTA = {255, 0, 255, 0xF81F};
+
+typedef struct Expectation {
+    const char *title;
+    uint16_t before;
+    uint16_t after;
+} Expectation;
+
+typedef struct CutSweep {
+    uint32_t cuts;
+    uint32_t record_cuts;
+    uint32_t worst_record_decoded;
+    uint32_t worst_table_decoded;
+} CutSweep;
+
+static uint16_t shown_pixel(const char *title)
+{
+    static uint16_t pixels[COVER_FULL_PIXELS];
+    Covers covers;
+    uint32_t record = 0;
+    if (!covers_open(&covers, (ByteSource){buffer_read, &covers_file}, covers_capacity) ||
+        !covers_find(&covers, album_key(title), &record)) {
+        return 0;
+    }
+    CHECK(covers_read(&covers, record, COVER_FULL, pixels));
+    return pixels[COVER_FULL_PIXELS / 2];
+}
+
+static void five_albums(void)
+{
+    reset();
+    add_album("Alpha", RED);
+    add_album("Beta", GREEN);
+    add_album("Gamma", BLUE);
+    add_album("Delta", WHITE);
+    add_album("Epsilon", YELLOW);
+}
+
+static void check_no_wrong_cover(const Expectation *expected, uint32_t count)
+{
+    for (uint32_t index = 0; index < count; index++) {
+        uint16_t pixel = shown_pixel(expected[index].title);
+        CHECK(pixel == 0 || pixel == expected[index].before || pixel == expected[index].after);
+    }
+}
+
+static void check_final_covers(const Expectation *expected, uint32_t count)
+{
+    for (uint32_t index = 0; index < count; index++) {
+        CHECK_EQUAL(expected[index].after, cover_pixel(expected[index].title));
+    }
+}
+
+static void recover_after_cut(const Expectation *expected, uint32_t count, CutSweep *sweep,
+                              bool in_record)
+{
+    CoverStats stats;
+    cut_sink = (CutSink){.left = -1};
+    check_no_wrong_cover(expected, count);
+    CHECK_EQUAL(SCAN_OK, rescan(true, &stats));
+    CHECK_EQUAL(count, stats.reused + stats.decoded);
+    check_final_covers(expected, count);
+    uint32_t *worst = in_record ? &sweep->worst_record_decoded : &sweep->worst_table_decoded;
+    *worst = stats.decoded > *worst ? stats.decoded : *worst;
+    sweep->record_cuts += in_record ? 1u : 0u;
+}
+
+static CutSweep sweep_cuts(const uint8_t *snapshot, const Expectation *expected, uint32_t count)
+{
+    CoverStats stats;
+    CutSweep sweep = {0, 0, 0, 0};
+    uint32_t records_start = COVERS_HEADER_SIZE + (covers_capacity - COVERS_HEADER_SIZE) /
+                                                      RECORD_SLOT *
+                                                      (RECORD_SLOT - COVER_BUILD_RECORD_BYTES);
+    memcpy(covers_file.bytes, snapshot, covers_capacity);
+    cut_sink = (CutSink){.left = -1};
+    CHECK_EQUAL(SCAN_OK, rescan(true, &stats));
+    uint32_t writes = cut_sink.writes;
+    for (uint32_t cut = 0; cut < writes; cut++) {
+        memcpy(covers_file.bytes, snapshot, covers_capacity);
+        cut_sink = (CutSink){.left = (int32_t)cut};
+        CHECK_EQUAL(SCAN_WRITE_FAILED, rescan(true, &stats));
+        recover_after_cut(expected, count, &sweep, cut_sink.failed_at >= records_start);
+        sweep.cuts++;
+    }
+    return sweep;
+}
+
+static uint8_t *built_snapshot(void)
+{
+    CoverStats stats;
+    uint8_t *snapshot = malloc(COVERS_CAPACITY);
+    CHECK_EQUAL(SCAN_OK, rescan(true, &stats));
+    CHECK_EQUAL(5u, stats.decoded);
+    memcpy(snapshot, covers_file.bytes, covers_capacity);
+    return snapshot;
+}
+
+static void report_sweep(const char *name, CutSweep sweep)
+{
+    printf("%s: %u cuts, %u inside records (worst recovery decoded %u), %u in the index "
+           "(worst recovery decoded %u)\n",
+           name, sweep.cuts, sweep.record_cuts, sweep.worst_record_decoded,
+           sweep.cuts - sweep.record_cuts, sweep.worst_table_decoded);
+}
+
+static void a_cut_anywhere_never_shows_another_albums_cover(void)
+{
+    static const Expectation expected[] = {
+        {"Alpha", 0xF800, 0xF800},   {"Beta", 0x07E0, 0x07FF}, {"Delta", 0xFFFF, 0xFFFF},
+        {"Epsilon", 0xFFE0, 0xFFE0}, {"Zeta", 0, 0xF81F},
+    };
+    five_albums();
+    uint8_t *snapshot = built_snapshot();
+    remove_album("Gamma");
+    replace_cover("Beta", CYAN);
+    add_album("Zeta", MAGENTA);
+    CutSweep sweep = sweep_cuts(snapshot, expected, 5);
+    report_sweep("roomy file", sweep);
+    CHECK(sweep.cuts > 0);
+    CHECK(sweep.worst_record_decoded <= 2u);
+    free(snapshot);
+}
+
+static void a_cut_while_rewriting_a_full_file_never_shows_another_albums_cover(void)
+{
+    static const Expectation expected[] = {
+        {"Alpha", 0xF800, 0xF800}, {"Beta", 0x07E0, 0x07FF},    {"Gamma", 0x001F, 0x001F},
+        {"Delta", 0xFFFF, 0xFFFF}, {"Epsilon", 0xFFE0, 0xFFE0},
+    };
+    five_albums();
+    covers_capacity = COVERS_HEADER_SIZE + 5 * RECORD_SLOT;
+    uint8_t *snapshot = built_snapshot();
+    replace_cover("Beta", CYAN);
+    CutSweep sweep = sweep_cuts(snapshot, expected, 5);
+    report_sweep("full file", sweep);
+    CHECK(sweep.cuts > 0);
+    CHECK(sweep.worst_record_decoded <= 1u);
+    free(snapshot);
+}
+
 int main(void)
 {
     static const TestCase cases[] = {
@@ -446,6 +610,8 @@ int main(void)
         TEST_CASE(a_file_without_stamps_is_built_again),
         TEST_CASE(a_damaged_index_is_ignored),
         TEST_CASE(without_a_previous_file_everything_is_decoded),
+        TEST_CASE(a_cut_anywhere_never_shows_another_albums_cover),
+        TEST_CASE(a_cut_while_rewriting_a_full_file_never_shows_another_albums_cover),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));
 }

@@ -10,11 +10,14 @@
 
 enum {
     ALBUMS = 300,
+    FULL_CARD_ALBUMS = 2673,
+    INDEX_BLOCK_ROWS = 64,
+    ADDED_ALBUMS = 8,
     MEMORY_SIZE = 384 * 1024,
     LIBRARY_CAPACITY = 4 * 1024 * 1024,
     SCRATCH_SIZE = 16 * 1024 * 1024,
     RECORD_SLOT = COVERS_ENTRY_SIZE + 4 + COVER_BUILD_RECORD_BYTES,
-    COVERS_CAPACITY = COVERS_HEADER_SIZE + ALBUMS * RECORD_SLOT,
+    COVERS_BUFFER = COVERS_HEADER_SIZE + FULL_CARD_ALBUMS * RECORD_SLOT,
     FLAC_INFO_END = 4 + 4 + 34 + 4 + 14,
     PICTURE_FIELDS = 32,
     PICTURE_MIME_LENGTH = 9,
@@ -34,7 +37,18 @@ typedef struct Buffer {
     uint32_t capacity;
 } Buffer;
 
+typedef struct WriteCounts {
+    uint32_t record_calls;
+    uint32_t record_bytes;
+    uint32_t table_calls;
+    uint32_t table_bytes;
+} WriteCounts;
+
 typedef struct LargeCard {
+    uint32_t albums;
+    uint32_t covers_capacity;
+    int32_t cut_left;
+    WriteCounts writes;
     Blob plain;
     Blob embedded;
     Blob png;
@@ -58,7 +72,7 @@ static bool parse_album(const char *path, uint32_t *album, const char **rest)
 {
     unsigned value = 0;
     int used = 0;
-    if (sscanf(path, "/A%3u%n", &value, &used) != 1 || used != 5 || value >= ALBUMS) {
+    if (sscanf(path, "/A%4u%n", &value, &used) != 1 || used != 6 || value >= card.albums) {
         return false;
     }
     *album = value;
@@ -87,7 +101,7 @@ static bool card_open_dir(void *context, const char *path)
 static uint32_t folder_entries(void)
 {
     if (card.open_folder == ROOT) {
-        return ALBUMS;
+        return card.albums;
     }
     return has_embedded_art((uint32_t)card.open_folder) ? 1 : 2;
 }
@@ -97,7 +111,7 @@ static void name_entry(ScanEntry *entry)
     entry->directory = card.open_folder == ROOT;
     entry->modified = entry->directory ? 0 : 1000;
     if (entry->directory) {
-        snprintf(entry->name, sizeof entry->name, "A%03u", card.cursor);
+        snprintf(entry->name, sizeof entry->name, "A%04u", card.cursor);
         return;
     }
     snprintf(entry->name, sizeof entry->name, "%s", card.cursor == 0 ? "01.flac" : "cover.png");
@@ -181,6 +195,21 @@ static bool buffer_write(void *context, uint32_t offset, const void *bytes, uint
     return true;
 }
 
+static bool count_write(void *context, uint32_t offset, const void *bytes, uint32_t length)
+{
+    uint32_t slots = (card.covers_capacity - COVERS_HEADER_SIZE) / RECORD_SLOT;
+    bool record = offset >= COVERS_HEADER_SIZE + slots * (RECORD_SLOT - COVER_BUILD_RECORD_BYTES);
+    if (card.cut_left == 0) {
+        return false;
+    }
+    card.cut_left -= card.cut_left > 0 ? 1 : 0;
+    card.writes.record_calls += record ? 1u : 0u;
+    card.writes.record_bytes += record ? length : 0u;
+    card.writes.table_calls += record ? 0u : 1u;
+    card.writes.table_bytes += record ? 0u : length;
+    return buffer_write(context, offset, bytes, length);
+}
+
 static Blob read_fixture(const char *name)
 {
     char path[512];
@@ -242,7 +271,7 @@ static void prepare_card(void)
     card.png.size = cover_png_make(card.png.bytes, ORANGE);
     card.embedded = embed_picture(&card.plain, &card.png);
     library_file = (Buffer){calloc(LIBRARY_CAPACITY, 1), LIBRARY_CAPACITY};
-    covers_file = (Buffer){calloc(COVERS_CAPACITY, 1), COVERS_CAPACITY};
+    covers_file = (Buffer){calloc(COVERS_BUFFER, 1), COVERS_BUFFER};
     scratch_file = (Buffer){calloc(SCRATCH_SIZE, 1), SCRATCH_SIZE};
 }
 
@@ -263,7 +292,7 @@ static void scan_library(void *memory)
                     .sink = {buffer_write, &library_file},
                     .capacity = LIBRARY_CAPACITY};
     CHECK_EQUAL(SCAN_OK, library_scan(&scan, &stats));
-    CHECK_EQUAL(ALBUMS, stats.tracks);
+    CHECK_EQUAL(card.albums, stats.tracks);
 }
 
 static ScanResult rescan(CoverStats *stats)
@@ -272,12 +301,13 @@ static ScanResult rescan(CoverStats *stats)
     scan_library(memory);
     card.dirs_opened = 0;
     card.files_opened = 0;
+    card.writes = (WriteCounts){0, 0, 0, 0};
     CoverJob job = {.files = card_files(),
                     .library = {buffer_read, &library_file},
                     .library_size = LIBRARY_CAPACITY,
-                    .sink = {buffer_write, &covers_file},
+                    .sink = {count_write, &covers_file},
                     .previous = {buffer_read, &covers_file},
-                    .capacity = COVERS_CAPACITY,
+                    .capacity = card.covers_capacity,
                     .memory = memory,
                     .size = sizeof memory};
     return cover_build(&job, stats);
@@ -291,11 +321,19 @@ static void report_pass(const char *name, const CoverStats *stats)
            card.files_opened, card.dirs_opened);
 }
 
+static void use_albums(uint32_t albums)
+{
+    prepare_card();
+    card.albums = albums;
+    card.covers_capacity = COVERS_BUFFER;
+    card.cut_left = -1;
+    memset(covers_file.bytes, 0, COVERS_BUFFER);
+}
+
 static void the_first_rescan_decodes_every_album(void)
 {
     CoverStats stats;
-    prepare_card();
-    memset(covers_file.bytes, 0, COVERS_CAPACITY);
+    use_albums(ALBUMS);
     CHECK_EQUAL(SCAN_OK, rescan(&stats));
     report_pass("first rescan", &stats);
     CHECK_EQUAL(ALBUMS, stats.albums);
@@ -308,8 +346,7 @@ static void the_first_rescan_decodes_every_album(void)
 static void an_unchanged_rescan_decodes_nothing(void)
 {
     CoverStats stats;
-    prepare_card();
-    memset(covers_file.bytes, 0, COVERS_CAPACITY);
+    use_albums(ALBUMS);
     CHECK_EQUAL(SCAN_OK, rescan(&stats));
     CHECK_EQUAL(SCAN_OK, rescan(&stats));
     report_pass("unchanged rescan", &stats);
@@ -319,11 +356,64 @@ static void an_unchanged_rescan_decodes_nothing(void)
     CHECK_EQUAL(0u, stats.missing);
 }
 
+static void committing_each_cover_of_a_full_card_is_measured(void)
+{
+    CoverStats stats;
+    use_albums(FULL_CARD_ALBUMS);
+    CHECK_EQUAL(SCAN_OK, rescan(&stats));
+    report_pass("full card", &stats);
+    CHECK_EQUAL(FULL_CARD_ALBUMS, stats.decoded);
+    printf("full card: index %u bytes in %u writes (%u bytes and %u writes per cover), "
+           "records %u bytes in %u writes\n",
+           card.writes.table_bytes, card.writes.table_calls,
+           card.writes.table_bytes / stats.decoded, card.writes.table_calls / stats.decoded,
+           card.writes.record_bytes, card.writes.record_calls);
+}
+
+static uint32_t recover_from_cut(const uint8_t *snapshot, uint32_t used, uint32_t cut)
+{
+    CoverStats stats;
+    memcpy(covers_file.bytes, snapshot, used);
+    card.cut_left = (int32_t)cut;
+    CHECK_EQUAL(SCAN_WRITE_FAILED, rescan(&stats));
+    card.cut_left = -1;
+    CHECK_EQUAL(SCAN_OK, rescan(&stats));
+    CHECK_EQUAL(card.albums, stats.reused + stats.decoded);
+    CHECK_EQUAL(card.albums, stats.covers);
+    return stats.decoded;
+}
+
+static void a_cut_while_inserting_redecodes_one_index_block_at_most(void)
+{
+    CoverStats stats;
+    uint32_t used = COVERS_HEADER_SIZE +
+                    FULL_CARD_ALBUMS * (RECORD_SLOT - COVER_BUILD_RECORD_BYTES) +
+                    (ALBUMS + ADDED_ALBUMS) * COVER_BUILD_RECORD_BYTES;
+    uint8_t *snapshot = malloc(used);
+    uint32_t worst = 0;
+    use_albums(ALBUMS);
+    CHECK_EQUAL(SCAN_OK, rescan(&stats));
+    memcpy(snapshot, covers_file.bytes, used);
+    card.albums = ALBUMS + ADDED_ALBUMS;
+    CHECK_EQUAL(SCAN_OK, rescan(&stats));
+    uint32_t writes = card.writes.record_calls + card.writes.table_calls;
+    for (uint32_t cut = 0; cut < writes; cut++) {
+        uint32_t decoded = recover_from_cut(snapshot, used, cut);
+        worst = decoded > worst ? decoded : worst;
+    }
+    printf("%u inserts into %u covers: %u writes, worst recovery decoded %u\n", ADDED_ALBUMS,
+           ALBUMS, writes, worst);
+    CHECK(worst <= INDEX_BLOCK_ROWS + 1 + ADDED_ALBUMS);
+    free(snapshot);
+}
+
 int main(void)
 {
     static const TestCase cases[] = {
         TEST_CASE(the_first_rescan_decodes_every_album),
         TEST_CASE(an_unchanged_rescan_decodes_nothing),
+        TEST_CASE(a_cut_while_inserting_redecodes_one_index_block_at_most),
+        TEST_CASE(committing_each_cover_of_a_full_card_is_measured),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));
 }
