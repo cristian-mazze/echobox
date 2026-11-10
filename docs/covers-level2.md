@@ -93,7 +93,7 @@ An app step with the screen off takes 0.3 to 0.7 ms on average. The worst record
 
 1. **Rolling grid: confirmed.** It also removes the 79 ms render block, because each 112-px row is converted as soon as it is complete. Progressive JPEG and PNG stay "paused only" in the first release, which costs nothing on the reference library. PNG still gets the rolling mode in phase 1, so that it can join later once inflate has yield points.
 2. **Cover overlay in `GLYPH_RAM`: confirmed, by estimate.** The decoder, the lookup and the writer come to about 22 KB without tag readers, against 53,248 B. Phase 3 links the real overlay and checks it.
-3. **Region plan: unchanged.** The rolling window is 9 cell rows × 112 × 3 channels × 4 B = 12,096 B. That covers chroma up to a vertical sampling factor of 2 when the cropped span is at least 222 px, and factor 1 from 112 px. Narrower cases return `COVER_IMAGE_NEEDS_IDLE`.
+3. **Region plan: unchanged.** The rolling window is 9 cell rows × 112 × 3 channels × 4 B = 12,096 B. That covers chroma up to a vertical sampling factor of 2 when the cropped span is at least 224 px (see "Phase 1 result"), and factor 1 from 112 px. Narrower cases return `COVER_IMAGE_NEEDS_IDLE`.
 4. **Cooperative yield without a separate stack: confirmed.** The decoder peaks at 8.4 KB of stack. The background step it calls must be measured on top of that in phase 4, against 16 KB.
 5. **Tidal writes: confirmed.** Writes are fast enough to go straight to the card, so there is no fallback to keep records in RAM.
 6. **Start conditions: changed.** The sample rate limit drops from 96 kHz to 48 kHz. The other conditions stay as they were.
@@ -158,6 +158,38 @@ The starting sizes are a main code window of 151,068 of 157,292 B and a rescan o
 
 - Measure the peak memory of the rolling mode for each kind of image (state, tables, blocks, reader and window) and add it to this document. Note any change it implies for the region plan of phase 3.
 - Commit: `docs: Rolling decoder memory`
+
+### Phase 1 result
+
+What was built, and where it differs from the steps above:
+
+- **One grid type, two modes.** Instead of a `CoverTarget` table, `CoverGrid` now ends in a flexible array of `ring_rows` cell rows (112 for the full grid, 9 for the rolling one) and carries an optional `reach` hook. The decoders keep calling the same `cover_grid_*` functions, and the level 1 numbers do not change. `cover_grid_reach` does nothing when the hook is empty. This avoided a second indirection in the rescan overlay.
+- **Row renderer in the main image.** The first build of the decoders passed the 86,016 B overlay limit by 292 B. `cover_render.c` (the cell to RGB565 conversion) now lives in its own library that `echo_device` links with `-Wl,-u`, and the overlay reuses it through `--just-symbols`. Moving all of `cover_grid.c` was tried first and it pushed code, `.data` and `.bss` to 438,740 B, over the 437,600 B limit.
+- **Sizes after phase 1:** main code window 151,916 of 157,292 B, code plus `.data` and `.bss` 436,900 of 437,600 B, rescan overlay 85,460 of 86,016 B. `cover_grid_rolling.c` and `cover_image_rows.c` are not in the overlay map.
+- **`fits` takes the band height.** `cover_grid_rolling_fits(width, height, band_height)` uses the pixel height of one decoder step (8 times the largest vertical sampling factor for JPEG, 1 for PNG). Worst case alignment gives `(span - 1 + band * 112 - 1) / span + 1` cell rows, which must be 9 or fewer. For a 16 px band (4:2:0) that needs a span of at least 224 px, not 222 as estimated in phase 0. A band of 8 px needs 112 px.
+- **Extra result codes.** `COVER_IMAGE_NEEDS_IDLE` for progressive JPEG, baseline JPEG with one scan per component, Adam7 PNG, PNG rows over the row limit and spans the window cannot cover. `COVER_IMAGE_CANCELLED` when the sink returns false.
+- **Proof.** `check_cover_decode.py` runs every good image in both modes and requires identical records, derives the expected `NEEDS_IDLE` cases from the image headers, and fuzzes both modes under the sanitizers. Pillow cannot write 4:1:1 JPEG, so 4:1:1 is covered only by the synthetic MCU-order test in `test_cover_grid_rolling`.
+
+### Rolling decoder memory
+
+Arena use of `cover_image_decode_rows` measured on the host with 64-bit pointers. The device is a few hundred bytes smaller.
+
+| Part | JPEG | PNG |
+|---|---|---|
+| Rolling state (`held` row 1,344 B and bookkeeping) | 1,384 B | 1,384 B |
+| Grid: totals 2,688 B, row scratch 1,344 B, window 12,096 B | 16,184 B | 16,184 B |
+| Reader buffer | 4,096 B | 4,096 B |
+| Decoder state, tables, blocks, inflate | 13,144 B | 37,400 to 39,992 B |
+| Total | 34,808 B | 59,064 to 61,656 B |
+
+The result is the same for every JPEG sampling and size tried, and it changes only with the PNG color type.
+
+Changes this implies for phase 3:
+
+- The window alone is 12,096 B, but the rolling grid needs 17,568 B: 5.4 KB more for the per channel totals, the row scratch and the held even row that pairs with the next odd row to make a half row.
+- A JPEG decode needs 34.8 KB and a PNG decode about 61 KB (the inflate window dominates). Level 2 accepts only JPEG while playing, so the borrowed region plan can be sized for 35 KB.
+- The totals are computed on the first `reach`. For a 2,000 px span that is one stretch of work with no yield point, which phase 2 must split or phase 3 must precompute.
+- Rendering a row uses about 400 B of stack on top of the decoder.
 
 ### What phase 1 does not do
 
