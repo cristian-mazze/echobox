@@ -289,6 +289,10 @@ echo_add_unit_test(NAME test_cover_grid_rolling
     SOURCES image/test_cover_grid_rolling.c
     LIBRARIES echo_image
 )
+echo_add_unit_test(NAME test_cover_yield
+    SOURCES image/test_cover_yield.c
+    LIBRARIES echo_image
+)
 add_executable(cover_decode_tool image/cover_decode_tool.c)
 target_link_libraries(cover_decode_tool PRIVATE echo_image echo_options)
 echo_add_unit_test(NAME test_fat

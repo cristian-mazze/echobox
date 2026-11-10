@@ -11,6 +11,7 @@ add_library(echo_image STATIC
     cover_grid_rolling.c
     cover_image.c
     cover_image_rows.c
+    cover_yield.c
     image_arena.c
     image_reader.c
     inflate.c
