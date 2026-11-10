@@ -60,6 +60,8 @@ typedef struct PngRows {
     uint32_t filled;
     bool done;
     bool corrupt;
+    bool cancelled;
+    CoverColor color;
 } PngRows;
 
 typedef struct PngStream {
@@ -274,6 +276,7 @@ static void emit_row(PngRows *rows)
         }
     }
     cover_grid_row_finish(grid, y, is_gray(header->color) ? 1 : 3);
+    rows->cancelled = !cover_grid_reach(grid, y + 1, rows->color);
 }
 
 static bool rows_past_crop(const PngRows *rows)
@@ -289,6 +292,9 @@ static bool finish_row(PngRows *rows)
         return false;
     }
     emit_row(rows);
+    if (rows->cancelled) {
+        return false;
+    }
     uint8_t *swap = rows->previous;
     rows->previous = rows->current;
     rows->current = swap;
@@ -399,7 +405,7 @@ static CoverImageResult prepare_rows(PngRows *rows, ImageArena *arena)
     const PngHeader *header = &rows->header;
     uint32_t row_bytes = row_bytes_for(header, header->width);
     if (row_bytes > ROW_LIMIT) {
-        return COVER_IMAGE_TOO_BIG;
+        return cover_grid_streams(rows->grid) ? COVER_IMAGE_NEEDS_IDLE : COVER_IMAGE_TOO_BIG;
     }
     rows->channels = channels_of(header->color);
     uint32_t bits = rows->channels * header->depth;
@@ -412,6 +418,7 @@ static CoverImageResult prepare_rows(PngRows *rows, ImageArena *arena)
     rows->pass = 0;
     rows->done = false;
     rows->corrupt = false;
+    rows->cancelled = false;
     start_pass(rows);
     return COVER_IMAGE_OK;
 }
@@ -427,6 +434,9 @@ static CoverImageResult decode_data(PngDecoder *decoder, ImageArena *arena)
         return COVER_IMAGE_NO_MEMORY;
     }
     InflateResult result = inflate_run(&decoder->inflate);
+    if (decoder->rows.cancelled) {
+        return COVER_IMAGE_CANCELLED;
+    }
     if (result == INFLATE_ERROR || decoder->rows.corrupt || !decoder->rows.done) {
         return COVER_IMAGE_CORRUPT;
     }
@@ -439,12 +449,17 @@ CoverImageResult png_decode(ImageReader *reader, ImageArena *arena, CoverImage *
     if (decoder == NULL) {
         return COVER_IMAGE_NO_MEMORY;
     }
-    decoder->rows = (PngRows){.grid = image->grid, .palette_size = 0};
+    decoder->rows = (PngRows){.grid = image->grid, .palette_size = 0, .color = COVER_COLOR_RGB};
     decoder->stream = (PngStream){.reader = reader, .left = 0};
     CoverImageResult result = read_header(reader, &decoder->rows.header);
     const PngHeader *header = &decoder->rows.header;
+    decoder->rows.color = is_gray(header->color) ? COVER_COLOR_GRAY : COVER_COLOR_RGB;
     if (result == COVER_IMAGE_OK && !cover_grid_init(image->grid, header->width, header->height)) {
         result = COVER_IMAGE_TOO_BIG;
+    }
+    if (result == COVER_IMAGE_OK && cover_grid_streams(image->grid) &&
+        (header->interlaced || !cover_grid_stream_ok(image->grid, 1))) {
+        result = COVER_IMAGE_NEEDS_IDLE;
     }
     if (result == COVER_IMAGE_OK) {
         result = find_data(decoder);
@@ -455,7 +470,6 @@ CoverImageResult png_decode(ImageReader *reader, ImageArena *arena, CoverImage *
     if (result == COVER_IMAGE_OK) {
         result = decode_data(decoder, arena);
     }
-    bool gray = header->color == COLOR_GRAY || header->color == COLOR_GRAY_ALPHA;
-    image->color = gray ? COVER_COLOR_GRAY : COVER_COLOR_RGB;
+    image->color = decoder->rows.color;
     return result;
 }

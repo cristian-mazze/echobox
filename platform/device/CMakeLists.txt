@@ -171,6 +171,13 @@ if(CMAKE_CROSSCOMPILING)
     )
 endif()
 target_link_libraries(echo_device PRIVATE echo_app echo_device_logic echo_options)
+if(CMAKE_CROSSCOMPILING)
+    set(ECHO_COVER_RENDER_EXPORTS cover_render_full_row cover_render_half_row)
+    target_link_libraries(echo_device PRIVATE echo_cover_render)
+    foreach(export ${ECHO_COVER_RENDER_EXPORTS})
+        target_link_options(echo_device PRIVATE -Wl,-u,${export})
+    endforeach()
+endif()
 target_link_options(echo_device PRIVATE
     -T${ECHO_DEVICE_LINKER_SCRIPT}
     -Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/echo_device.map

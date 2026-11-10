@@ -53,6 +53,9 @@ static inline uint32_t cover_grid_bytes(uint32_t ring_rows)
 void cover_grid_begin(CoverGrid *grid, uint32_t ring_rows);
 int32_t *cover_grid_cell_row(CoverGrid *grid, uint32_t channel, uint32_t row);
 bool cover_grid_reach(CoverGrid *grid, uint32_t y, CoverColor color);
+bool cover_grid_band_fits(uint32_t span, uint32_t band_height, uint32_t ring_rows);
+bool cover_grid_stream_ok(const CoverGrid *grid, uint32_t band_height);
+bool cover_grid_streams(const CoverGrid *grid);
 
 bool cover_grid_init(CoverGrid *grid, uint32_t width, uint32_t height);
 void cover_grid_set_sampling(CoverGrid *grid, uint32_t channel, uint32_t width, uint32_t height);

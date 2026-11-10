@@ -12,12 +12,7 @@ enum {
 bool cover_grid_rolling_fits(uint32_t width, uint32_t height, uint32_t band_height)
 {
     uint32_t span = width < height ? width : height;
-    if (span == 0 || span > COVER_GRID_LIMIT || band_height == 0 ||
-        band_height > COVER_GRID_LIMIT) {
-        return false;
-    }
-    uint32_t reach = band_height * CELLS;
-    return (span - 1 + reach - 1) / span + 1 <= COVER_ROLLING_ROWS;
+    return cover_grid_band_fits(span, band_height, COVER_ROLLING_ROWS);
 }
 
 static uint32_t rows_ready(const CoverGrid *grid, uint32_t y)

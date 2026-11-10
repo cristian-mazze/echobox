@@ -215,6 +215,11 @@ static CoverImageResult read_frame(JpegDecoder *decoder, uint32_t length)
     if (!cover_grid_init(decoder->grid, decoder->width, decoder->height)) {
         return COVER_IMAGE_TOO_BIG;
     }
+    if (cover_grid_streams(decoder->grid) &&
+        (decoder->progressive ||
+         !cover_grid_stream_ok(decoder->grid, BLOCK_SIDE * decoder->v_max))) {
+        return COVER_IMAGE_NEEDS_IDLE;
+    }
     decoder->shift = choose_shift(decoder->width, decoder->height);
     decoder->outputs = BLOCK_SIDE >> decoder->shift;
     jpeg_prepare_kernel(decoder);
@@ -453,6 +458,25 @@ static bool decode_mcu(JpegDecoder *decoder, const JpegScan *scan, uint32_t mcu_
     return true;
 }
 
+static CoverColor color_of(const JpegDecoder *decoder)
+{
+    if (!decoder->frame_seen || decoder->component_count == 1) {
+        return COVER_COLOR_GRAY;
+    }
+    const JpegComponent *components = decoder->components;
+    bool rgb_ids = components[0].id == 'R' && components[1].id == 'G' && components[2].id == 'B';
+    return decoder->adobe_rgb || rgb_ids ? COVER_COLOR_RGB : COVER_COLOR_YCBCR;
+}
+
+static bool row_reached(JpegDecoder *decoder, uint32_t y)
+{
+    if (cover_grid_reach(decoder->grid, y, color_of(decoder))) {
+        return true;
+    }
+    decoder->stop = COVER_IMAGE_CANCELLED;
+    return false;
+}
+
 static bool decode_interleaved(JpegDecoder *decoder, const JpegScan *scan)
 {
     uint32_t units = 0;
@@ -466,6 +490,9 @@ static bool decode_interleaved(JpegDecoder *decoder, const JpegScan *scan)
             if (!decode_mcu(decoder, scan, mcu_x, mcu_y)) {
                 return false;
             }
+        }
+        if (!row_reached(decoder, (mcu_y + 1) * BLOCK_SIDE * decoder->v_max)) {
+            return false;
         }
     }
     return true;
@@ -485,6 +512,9 @@ static bool decode_single(JpegDecoder *decoder, const JpegScan *scan)
             if (!decode_block_at(decoder, scan, member, block_x, block_y)) {
                 return false;
             }
+        }
+        if (!row_reached(decoder, (block_y + 1) * BLOCK_SIDE * decoder->v_max / component->v)) {
+            return false;
         }
     }
     return true;
@@ -526,6 +556,10 @@ static Step run_scan(JpegDecoder *decoder, uint32_t length, uint32_t *scans)
         !scan_valid(decoder, &scan) || ++*scans > MAX_SCANS) {
         return STEP_FAILED;
     }
+    if (cover_grid_streams(decoder->grid) && scan.count != decoder->component_count) {
+        decoder->stop = COVER_IMAGE_NEEDS_IDLE;
+        return STEP_FAILED;
+    }
     if (scan_skippable(decoder, &scan)) {
         jpeg_skip_entropy(decoder->reader);
         return STEP_CONTINUE;
@@ -538,6 +572,11 @@ static Step run_scan(JpegDecoder *decoder, uint32_t length, uint32_t *scans)
     }
     bool complete = decoder->scanned == (1u << decoder->component_count) - 1u;
     return !decoder->progressive && complete ? STEP_DONE : STEP_CONTINUE;
+}
+
+static CoverImageResult failure_of(const JpegDecoder *decoder)
+{
+    return decoder->stop == COVER_IMAGE_OK ? COVER_IMAGE_CORRUPT : decoder->stop;
 }
 
 static CoverImageResult read_segment(JpegDecoder *decoder, uint32_t marker, uint32_t *scans,
@@ -568,7 +607,7 @@ static CoverImageResult read_segment(JpegDecoder *decoder, uint32_t marker, uint
         read = read_adobe(decoder, length);
     } else if (marker == MARKER_SOS) {
         *step = run_scan(decoder, length, scans);
-        return *step == STEP_FAILED ? COVER_IMAGE_CORRUPT : COVER_IMAGE_OK;
+        return *step == STEP_FAILED ? failure_of(decoder) : COVER_IMAGE_OK;
     } else {
         read = image_reader_skip(reader, length);
     }
@@ -601,16 +640,6 @@ static CoverImageResult read_markers(JpegDecoder *decoder)
     }
 }
 
-static CoverColor color_of(const JpegDecoder *decoder)
-{
-    if (!decoder->frame_seen || decoder->component_count == 1) {
-        return COVER_COLOR_GRAY;
-    }
-    const JpegComponent *components = decoder->components;
-    bool rgb_ids = components[0].id == 'R' && components[1].id == 'G' && components[2].id == 'B';
-    return decoder->adobe_rgb || rgb_ids ? COVER_COLOR_RGB : COVER_COLOR_YCBCR;
-}
-
 CoverImageResult jpeg_decode(ImageReader *reader, ImageArena *arena, CoverImage *image)
 {
     if (image_reader_byte(reader) != BYTE_FF || image_reader_byte(reader) != MARKER_SOI) {
@@ -631,6 +660,7 @@ CoverImageResult jpeg_decode(ImageReader *reader, ImageArena *arena, CoverImage 
     decoder->adobe_rgb = false;
     decoder->restart_interval = 0;
     decoder->scanned = 0;
+    decoder->stop = COVER_IMAGE_OK;
     CoverImageResult result = read_markers(decoder);
     image->color = color_of(decoder);
     return result;

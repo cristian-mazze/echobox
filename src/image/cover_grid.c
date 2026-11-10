@@ -32,6 +32,26 @@ bool cover_grid_reach(CoverGrid *grid, uint32_t y, CoverColor color)
     return grid->reach == NULL || grid->reach(grid, y, color);
 }
 
+bool cover_grid_band_fits(uint32_t span, uint32_t band_height, uint32_t ring_rows)
+{
+    if (span == 0 || span > COVER_GRID_LIMIT || band_height == 0 ||
+        band_height > COVER_GRID_LIMIT) {
+        return false;
+    }
+    return (span - 1 + band_height * CELLS - 1) / span + 1 <= ring_rows;
+}
+
+bool cover_grid_streams(const CoverGrid *grid)
+{
+    return grid->reach != NULL;
+}
+
+bool cover_grid_stream_ok(const CoverGrid *grid, uint32_t band_height)
+{
+    return !cover_grid_streams(grid) ||
+           cover_grid_band_fits(grid->span, band_height, grid->ring_rows);
+}
+
 bool cover_grid_init(CoverGrid *grid, uint32_t width, uint32_t height)
 {
     if (width == 0 || height == 0 || width > COVER_GRID_LIMIT || height > COVER_GRID_LIMIT) {
