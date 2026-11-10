@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 enum {
-    COVER_YIELD_SLICE_MS = 4
+    COVER_YIELD_SLICE_MS = 2
 };
 
 typedef struct CoverYield {

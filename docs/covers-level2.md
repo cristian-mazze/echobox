@@ -197,7 +197,7 @@ Phase 1 adds no yield hook (phase 2), no borrowed memory or overlay (phase 3), a
 
 ## Phase 2: yield hook
 
-Phase 2 lets `cover_image_decode_rows` give the caller a turn at least every `slice_ms` (4 ms by default), without a second stack. The caller is expected to run the audio service from that callback.
+Phase 2 lets `cover_image_decode_rows` give the caller a turn at least every `slice_ms` (2 ms by default), without a second stack. The caller is expected to run the audio service from that callback.
 
 ### What was built
 
@@ -255,6 +255,18 @@ Phase 2 lets `cover_image_decode_rows` give the caller a turn at least every `sl
 - The hook is a function pointer in `CoverPlay`, so `cover_play.c`, the writer and the rolling decoder are not linked into the rescan overlay (85,796 of 86,016 B). The overlay for level 2 has to link them.
 
 `test_cover_play` checks, on the in-memory card: the covers written while playing are byte for byte the covers of the paused pass; every card write is 4 KB or less and each is gated; PNG is deferred with `jpeg_only` and the cursor stays; a refused service call and a denied write leave no cover and no failure, and a later pass finishes the library.
+
+### Device measurement of the yield (music stopped)
+
+Bench `spike/covers-l2-yield-bench` on the player at 200 MHz, each image decoded twice (slice 0 ms and 4 ms), rows written to the card in 4,032 B chunks.
+
+- JPEG: longest gap between services 6.3 to 7.1 ms with slice 0 (9.6 ms for the 4:4:4 2000 px image), 8.0 to 10.1 ms with slice 4. The shortest indivisible stretch is about 6 to 7 ms, well above the host estimate of 2.6 to 4.6 ms. Decode time 0.9 to 13 s per image.
+- PNG: longest gap 24 to 32 ms with any slice, growing with the image. Decode time 11 to 43 s.
+- Progressive JPEG returns `COVER_IMAGE_NEEDS_IDLE` at once.
+- Stack peak 4,256 B for JPEG and about 3.6 KB for PNG with the yield active, under the 8,416 B of phase 0.
+- Card: 4 KB reads at most 3.3 ms, 4,032 B writes 5.5 to 6.5 ms on average and 9.0 ms at worst.
+
+Decision: level 2 decodes baseline JPEG only (`jpeg_only` stays true, PNG and progressive wait for the paused pass) and the default slice is 2 ms. The margin against the 10 ms ceiling is thin and accepted: with a 4 ms slice the worst gap reached 10.1 ms, and the stretch below 6 ms cannot be reduced without more yield points inside the MCU work.
 
 ### What is still open
 

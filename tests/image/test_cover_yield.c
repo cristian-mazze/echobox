@@ -31,13 +31,13 @@ static void the_hook_serves_only_after_a_full_slice(void)
     Fake fake = {100, 0, 0};
     CoverYield yield = cover_yield_make(fake_now, fake_service, &fake);
     cover_yield_begin(&yield);
-    fake.now = 103;
+    fake.now = 100 + COVER_YIELD_SLICE_MS - 1;
     CHECK(cover_yield_point(&yield));
     CHECK_EQUAL(0, fake.services);
-    fake.now = 104;
+    fake.now = 100 + COVER_YIELD_SLICE_MS;
     CHECK(cover_yield_point(&yield));
     CHECK_EQUAL(1, fake.services);
-    fake.now = 107;
+    fake.now = 100 + COVER_YIELD_SLICE_MS + 1;
     CHECK(cover_yield_point(&yield));
     CHECK_EQUAL(1, fake.services);
 }
@@ -47,6 +47,7 @@ static void the_longest_stretch_is_recorded(void)
     Fake fake = {0, 0, 0};
     CoverYield yield = cover_yield_make(fake_now, fake_service, &fake);
     cover_yield_begin(&yield);
+    yield.slice_ms = 4;
     fake.now = 4;
     cover_yield_point(&yield);
     fake.now = 13;
@@ -61,6 +62,7 @@ static void a_refusal_cancels_and_stays_cancelled(void)
 {
     Fake fake = {0, 0, 2};
     CoverYield yield = cover_yield_make(fake_now, fake_service, &fake);
+    yield.slice_ms = 4;
     cover_yield_begin(&yield);
     fake.now = 4;
     CHECK(cover_yield_point(&yield));
