@@ -8,7 +8,8 @@ enum {
 
 static CoverFillConditions ready_conditions(void)
 {
-    return (CoverFillConditions){.playing = false,
+    return (CoverFillConditions){.enabled = true,
+                                 .playing = false,
                                  .quiet_since_ms = NOW_MS - COVER_FILL_QUIET_MS,
                                  .display_on = false,
                                  .usb_power = false,
@@ -23,6 +24,13 @@ static void a_quiet_dark_player_on_battery_is_ready(void)
 {
     CoverFillConditions conditions = ready_conditions();
     CHECK(cover_fill_ready(&conditions, NOW_MS));
+}
+
+static void background_covers_off_is_never_ready(void)
+{
+    CoverFillConditions conditions = ready_conditions();
+    conditions.enabled = false;
+    CHECK(!cover_fill_ready(&conditions, NOW_MS));
 }
 
 static void playing_music_is_never_ready(void)
@@ -118,6 +126,7 @@ int main(void)
     static const TestCase cases[] = {
         TEST_CASE(a_quiet_dark_player_on_battery_is_ready),
         TEST_CASE(playing_music_is_never_ready),
+        TEST_CASE(background_covers_off_is_never_ready),
         TEST_CASE(fewer_than_twenty_quiet_seconds_are_not_ready),
         TEST_CASE(a_lit_screen_is_not_ready),
         TEST_CASE(usb_power_is_not_ready),

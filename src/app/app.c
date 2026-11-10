@@ -948,9 +948,15 @@ static void run_cover_scan(void)
     toast_show(&app.toast, text, hal_clock_milliseconds());
 }
 
+static bool background_covers_on(void)
+{
+    return app.settings.settings.background_covers != BACKGROUND_COVERS_OFF;
+}
+
 static void fill_covers_when_idle(uint32_t now_ms)
 {
-    CoverFillerWorld world = {.display_on = app.display_on,
+    CoverFillerWorld world = {.enabled = background_covers_on(),
+                              .display_on = app.display_on,
                               .rescan_waiting = app.rescan_requested || app.music_check_requested ||
                                                 app.cover_scan_requested};
     if (app.charging || app.saying_goodbye || !cover_filler_due(&app.filler, world, now_ms)) {
@@ -1175,7 +1181,7 @@ PlayerStatus app_player_status(void)
 
 bool app_covers_syncing(void)
 {
-    return cover_filler_syncing(&app.filler);
+    return background_covers_on() && cover_filler_syncing(&app.filler);
 }
 
 const char *app_toast_text(void)

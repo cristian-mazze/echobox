@@ -11,6 +11,7 @@ enum {
 };
 
 typedef struct CoverFillConditions {
+    bool enabled;
     bool playing;
     uint32_t quiet_since_ms;
     bool display_on;

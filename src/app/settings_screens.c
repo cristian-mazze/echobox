@@ -54,6 +54,8 @@ static const StringId ACCENT_OPTIONS[ACCENT_COUNT] = {
     STR_ACCENT_ORANGE, STR_ACCENT_AMBER,  STR_ACCENT_LIME, STR_ACCENT_CYAN,
     STR_ACCENT_BLUE,   STR_ACCENT_PURPLE, STR_ACCENT_PINK, STR_ACCENT_RED};
 static const StringId PERCENT_OPTIONS[2] = {STR_ON, STR_OFF};
+static const StringId COVERS_OPTIONS[BACKGROUND_COVERS_COUNT] = {
+    STR_SETTINGS_COVERS_ALWAYS, STR_SETTINGS_COVERS_PAUSED, STR_OFF};
 static const StringId USB_MODE_OPTIONS[USB_MODE_COUNT] = {STR_SETTINGS_STORAGE, STR_SETTINGS_DAC};
 static const StringId USB_MODE_MESSAGES[USB_MODE_COUNT] = {STR_SETTINGS_USB_DRIVES,
                                                            STR_SETTINGS_USB_SOUND};
@@ -291,6 +293,17 @@ static void choose_percent(void *context, int index)
     save(context);
 }
 
+static int current_covers(const void *context)
+{
+    return (int)settings_of(context)->background_covers;
+}
+
+static void choose_covers(void *context, int index)
+{
+    editable_settings(context)->background_covers = (BackgroundCovers)index;
+    save(context);
+}
+
 static const SettingChoice CHOICES[SETTINGS_CHOICE_COUNT] = {
     {STR_SETTINGS_SHUFFLE, SHUFFLE_OPTIONS, NULL, SHUFFLE_MODE_COUNT, current_shuffle,
      choose_shuffle, NULL},
@@ -315,6 +328,8 @@ static const SettingChoice CHOICES[SETTINGS_CHOICE_COUNT] = {
      describe_output},
     {STR_SETTINGS_START_SCREEN, START_OPTIONS, NULL, START_SCREEN_COUNT, current_start,
      choose_start, NULL},
+    {STR_SETTINGS_BACKGROUND_COVERS, COVERS_OPTIONS, NULL, BACKGROUND_COVERS_COUNT, current_covers,
+     choose_covers, NULL},
     {STR_SETTINGS_USB_MODE, USB_MODE_OPTIONS, NULL, USB_MODE_COUNT, current_usb_mode,
      choose_usb_mode, NULL},
     {STR_LANGUAGE_TITLE, LANGUAGE_OPTIONS, NULL, LANGUAGE_COUNT, current_language, choose_language,

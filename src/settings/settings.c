@@ -3,7 +3,7 @@
 #include "core/hash.h"
 
 enum {
-    VERSION = 7,
+    VERSION = 8,
     FIRST_VERSION = 1,
     AUTO_OFF_VERSION = 2,
     USB_MODE_VERSION = 3,
@@ -11,6 +11,10 @@ enum {
     ORIENTATION_VERSION = 5,
     LANGUAGE_VERSION = 6,
     DAC_VERSION = 7,
+    COVERS_VERSION = 8,
+    ORIENTATION_MASK = 0x03,
+    COVERS_SHIFT = 2,
+    COVERS_MASK = 0x03,
     FILTER_SHIFT = 5,
     BALANCE_MASK = 0x1F,
     LANGUAGE_MASK = 0x0F,
@@ -68,6 +72,7 @@ Settings settings_defaults(void)
         .balance = SETTINGS_BALANCE_CENTER,
         .accent = 0,
         .show_battery_percent = true,
+        .background_covers = BACKGROUND_COVERS_ALWAYS,
     };
 }
 
@@ -117,6 +122,12 @@ static uint32_t get_u32(const uint8_t *bytes, int offset)
     return value;
 }
 
+static uint8_t orientation_byte(const Settings *settings)
+{
+    uint8_t covers = (uint8_t)((settings->background_covers & COVERS_MASK) << COVERS_SHIFT);
+    return (uint8_t)((uint8_t)settings->orientation | covers);
+}
+
 static uint8_t language_byte(const Settings *settings)
 {
     uint8_t hidden = settings->show_battery_percent ? 0 : HIDE_PERCENT_BIT;
@@ -141,7 +152,7 @@ void settings_encode(const Settings *settings, uint8_t *bytes)
     bytes[AUTO_OFF_FIELD] = settings->auto_off;
     bytes[USB_MODE_FIELD] = (uint8_t)settings->usb_mode;
     bytes[DAC_VOLUME_FIELD] = settings->dac_volume;
-    bytes[ORIENTATION_FIELD] = (uint8_t)settings->orientation;
+    bytes[ORIENTATION_FIELD] = orientation_byte(settings);
     bytes[LANGUAGE_FIELD] = language_byte(settings);
     bytes[DAC_FIELD] = (uint8_t)(settings->filter << FILTER_SHIFT | settings->balance);
     put_u32(bytes, CHECKSUM_FIELD, checksum_of(bytes));
@@ -159,6 +170,23 @@ static bool header_valid(const uint8_t *bytes)
            get_u32(bytes, CHECKSUM_FIELD) == checksum_of(bytes);
 }
 
+static bool orientation_valid(const uint8_t *bytes)
+{
+    uint8_t byte = bytes[ORIENTATION_FIELD];
+    if (bytes[VERSION_FIELD] < COVERS_VERSION) {
+        return byte < ORIENTATION_COUNT;
+    }
+    uint32_t covers = (uint32_t)byte >> COVERS_SHIFT;
+    return (byte & ORIENTATION_MASK) < ORIENTATION_COUNT && covers < BACKGROUND_COVERS_COUNT;
+}
+
+static BackgroundCovers covers_of(const uint8_t *bytes)
+{
+    return bytes[VERSION_FIELD] < COVERS_VERSION
+               ? BACKGROUND_COVERS_ALWAYS
+               : (BackgroundCovers)(bytes[ORIENTATION_FIELD] >> COVERS_SHIFT & COVERS_MASK);
+}
+
 static bool values_valid(const uint8_t *bytes)
 {
     return bytes[BRIGHTNESS_FIELD] >= SETTINGS_BRIGHTNESS_MIN &&
@@ -169,8 +197,7 @@ static bool values_valid(const uint8_t *bytes)
            bytes[REPEAT_FIELD] < REPEAT_MODE_COUNT && bytes[VOLUME_FIELD] <= SETTINGS_VOLUME_MAX &&
            bytes[AUTO_OFF_FIELD] < AUTO_OFF_OPTION_COUNT &&
            bytes[USB_MODE_FIELD] < USB_MODE_COUNT &&
-           bytes[DAC_VOLUME_FIELD] <= SETTINGS_VOLUME_MAX &&
-           bytes[ORIENTATION_FIELD] < ORIENTATION_COUNT &&
+           bytes[DAC_VOLUME_FIELD] <= SETTINGS_VOLUME_MAX && orientation_valid(bytes) &&
            (bytes[VERSION_FIELD] < LANGUAGE_VERSION ||
             (bytes[LANGUAGE_FIELD] & LANGUAGE_MASK) < LANGUAGE_COUNT) &&
            (bytes[VERSION_FIELD] < DAC_VERSION ||
@@ -208,7 +235,7 @@ bool settings_decode(const uint8_t *bytes, uint32_t length, Settings *settings)
                           : bytes[DAC_VOLUME_FIELD],
         .orientation = bytes[VERSION_FIELD] < ORIENTATION_VERSION
                            ? ORIENTATION_LANDSCAPE
-                           : (Orientation)bytes[ORIENTATION_FIELD],
+                           : (Orientation)(bytes[ORIENTATION_FIELD] & ORIENTATION_MASK),
         .language = bytes[VERSION_FIELD] < LANGUAGE_VERSION
                         ? LANGUAGE_ENGLISH
                         : (Language)(bytes[LANGUAGE_FIELD] & LANGUAGE_MASK),
@@ -217,6 +244,7 @@ bool settings_decode(const uint8_t *bytes, uint32_t length, Settings *settings)
                                                       : bytes[DAC_FIELD] & BALANCE_MASK,
         .accent = accent_of(bytes),
         .show_battery_percent = (bytes[LANGUAGE_FIELD] & HIDE_PERCENT_BIT) == 0,
+        .background_covers = covers_of(bytes),
     };
     return true;
 }

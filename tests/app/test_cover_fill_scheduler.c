@@ -8,6 +8,7 @@
 #include "fake_hal.h"
 #include "fixture_library.h"
 #include "library/cover_state.h"
+#include "settings/settings.h"
 
 enum {
     START_MS = 1000,
@@ -15,6 +16,7 @@ enum {
     MUSIC_ALBUMS_INDEX = 3,
     HOME_SETTINGS_INDEX = 1,
     SETTINGS_SCAN_COVERS_INDEX = 15,
+    SETTINGS_BACKGROUND_COVERS_INDEX = 16,
     SCREEN_TIMEOUT_MS = 30000,
     QUIET_MS = 20000,
     PAUSED_AT_MS = 42000,
@@ -370,6 +372,76 @@ static void a_damaged_state_file_reads_as_unknown(void)
     CHECK(app_covers_syncing());
 }
 
+static void choose_background_covers(int choice)
+{
+    for (int row = 0; row < HOME_SETTINGS_INDEX; row++) {
+        tap(KEY_VOLUME_UP);
+    }
+    tap(KEY_PLAY);
+    for (int row = 0; row < SETTINGS_BACKGROUND_COVERS_INDEX; row++) {
+        tap(KEY_VOLUME_UP);
+    }
+    tap(KEY_PLAY);
+    for (int row = 0; row < choice; row++) {
+        tap(KEY_VOLUME_UP);
+    }
+    tap(KEY_PLAY);
+    while (app_screen_depth() > 1) {
+        tap(KEY_BACK);
+    }
+}
+
+static int borrows_after_a_dark_pause(void)
+{
+    play_first_album_track();
+    fake_hal_audio_set_position(PAUSED_AT_MS);
+    tap(KEY_PLAY);
+    tap(KEY_POWER);
+    int before = fake_hal_scratch_borrow_count();
+    wait_ms(QUIET_MS);
+    return fake_hal_scratch_borrow_count() - before;
+}
+
+static void background_covers_off_stops_idle_fills_and_hides_the_sync(void)
+{
+    start_with_pending(3);
+    CHECK(app_covers_syncing());
+    choose_background_covers(BACKGROUND_COVERS_OFF);
+    CHECK(!app_covers_syncing());
+    CHECK_EQUAL(0, borrows_after_a_dark_pause());
+    CHECK(!app_covers_syncing());
+}
+
+static void background_covers_off_is_kept_after_a_restart(void)
+{
+    start_with_pending(3);
+    choose_background_covers(BACKGROUND_COVERS_OFF);
+    start_app();
+    CHECK(!app_covers_syncing());
+    CHECK_EQUAL(0, borrows_after_a_dark_pause());
+}
+
+static void background_covers_when_paused_fills_as_before(void)
+{
+    start_with_pending(3);
+    choose_background_covers(BACKGROUND_COVERS_PAUSED);
+    CHECK(app_covers_syncing());
+    CHECK_EQUAL(1, borrows_after_a_dark_pause());
+    CHECK(!app_covers_syncing());
+}
+
+static void scanning_all_covers_still_works_with_background_covers_off(void)
+{
+    start_with_pending(3);
+    choose_background_covers(BACKGROUND_COVERS_OFF);
+    start_app();
+    int before = fake_hal_scratch_borrow_count();
+    ask_to_scan_all_covers();
+    step();
+    CHECK_EQUAL(before + 1, fake_hal_scratch_borrow_count());
+    CHECK(toast_is("Covers: 0 new"));
+}
+
 int main(void)
 {
     static const TestCase cases[] = {
@@ -378,6 +450,10 @@ int main(void)
         TEST_CASE(pending_covers_sync_until_a_session_finishes_them),
         TEST_CASE(an_unknown_count_syncs_until_the_first_session),
         TEST_CASE(a_damaged_state_file_reads_as_unknown),
+        TEST_CASE(background_covers_off_stops_idle_fills_and_hides_the_sync),
+        TEST_CASE(background_covers_off_is_kept_after_a_restart),
+        TEST_CASE(background_covers_when_paused_fills_as_before),
+        TEST_CASE(scanning_all_covers_still_works_with_background_covers_off),
         TEST_CASE(playing_music_never_fills_covers),
         TEST_CASE(the_screen_going_dark_on_its_own_after_a_long_pause_starts_at_once),
         TEST_CASE(a_lit_screen_waits),

@@ -40,6 +40,7 @@ typedef struct CoverFillerLinks {
 } CoverFillerLinks;
 
 typedef struct CoverFillerWorld {
+    bool enabled;
     bool display_on;
     bool rescan_waiting;
 } CoverFillerWorld;

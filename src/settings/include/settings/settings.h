@@ -48,6 +48,12 @@ typedef enum Language {
     LANGUAGE_FINNISH
 } Language;
 
+typedef enum BackgroundCovers {
+    BACKGROUND_COVERS_ALWAYS,
+    BACKGROUND_COVERS_PAUSED,
+    BACKGROUND_COVERS_OFF
+} BackgroundCovers;
+
 typedef enum Orientation {
     ORIENTATION_LANDSCAPE,
     ORIENTATION_PORTRAIT,
@@ -60,6 +66,7 @@ enum {
     START_SCREEN_COUNT = START_COVER_FLOW + 1,
     USB_MODE_COUNT = USB_MODE_DAC + 1,
     ORIENTATION_COUNT = ORIENTATION_PORTRAIT_FLIPPED + 1,
+    BACKGROUND_COVERS_COUNT = BACKGROUND_COVERS_OFF + 1,
     ACCENT_COUNT = 8,
     LANGUAGE_COUNT = LANGUAGE_FINNISH + 1,
     SETTINGS_BRIGHTNESS_MIN = 1,
@@ -93,6 +100,7 @@ typedef struct Settings {
     uint8_t balance;
     uint8_t accent;
     bool show_battery_percent;
+    BackgroundCovers background_covers;
 } Settings;
 
 Settings settings_defaults(void);

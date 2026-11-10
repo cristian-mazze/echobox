@@ -100,7 +100,7 @@ static void the_usb_mode_and_dac_volume_are_saved_at_bytes_fifteen_and_sixteen(v
     Settings settings = custom_settings();
     uint8_t bytes[SETTINGS_FILE_SIZE];
     settings_encode(&settings, bytes);
-    CHECK_EQUAL(7, bytes[VERSION_FIELD]);
+    CHECK_EQUAL(8, bytes[VERSION_FIELD]);
     CHECK_EQUAL(USB_MODE_DAC, bytes[USB_MODE_FIELD]);
     CHECK_EQUAL(37, bytes[DAC_VOLUME_FIELD]);
 }
@@ -237,7 +237,76 @@ static void a_newer_version_is_rejected(void)
     Settings settings = custom_settings();
     uint8_t bytes[SETTINGS_FILE_SIZE];
     settings_encode(&settings, bytes);
-    bytes[VERSION_FIELD] = 8;
+    bytes[VERSION_FIELD] = 9;
+    rewrite_checksum(bytes);
+    CHECK(!settings_decode(bytes, sizeof bytes, &settings));
+}
+
+static void background_covers_share_the_orientation_byte(void)
+{
+    Settings settings = custom_settings();
+    settings.background_covers = BACKGROUND_COVERS_OFF;
+    uint8_t bytes[SETTINGS_FILE_SIZE];
+    settings_encode(&settings, bytes);
+    CHECK_EQUAL(BACKGROUND_COVERS_OFF << 2 | ORIENTATION_PORTRAIT_FLIPPED,
+                bytes[ORIENTATION_FIELD]);
+    Settings decoded;
+    CHECK(settings_decode(bytes, sizeof bytes, &decoded));
+    CHECK_EQUAL(BACKGROUND_COVERS_OFF, decoded.background_covers);
+    CHECK_EQUAL(ORIENTATION_PORTRAIT_FLIPPED, decoded.orientation);
+}
+
+static void every_background_covers_choice_survives_a_save(void)
+{
+    for (int choice = 0; choice < BACKGROUND_COVERS_COUNT; choice++) {
+        Settings settings = settings_defaults();
+        settings.background_covers = (BackgroundCovers)choice;
+        uint8_t bytes[SETTINGS_FILE_SIZE];
+        settings_encode(&settings, bytes);
+        Settings decoded;
+        CHECK(settings_decode(bytes, sizeof bytes, &decoded));
+        CHECK_EQUAL(choice, (int)decoded.background_covers);
+    }
+}
+
+static void background_covers_default_to_always(void)
+{
+    CHECK_EQUAL(BACKGROUND_COVERS_ALWAYS, settings_defaults().background_covers);
+}
+
+static void a_version_seven_file_loads_with_background_covers_always(void)
+{
+    Settings settings = custom_settings();
+    uint8_t bytes[SETTINGS_FILE_SIZE];
+    settings_encode(&settings, bytes);
+    bytes[VERSION_FIELD] = 7;
+    rewrite_checksum(bytes);
+    Settings decoded;
+    CHECK(settings_decode(bytes, sizeof bytes, &decoded));
+    CHECK_EQUAL(BACKGROUND_COVERS_ALWAYS, decoded.background_covers);
+    CHECK_EQUAL(ORIENTATION_PORTRAIT_FLIPPED, decoded.orientation);
+}
+
+static void a_version_seven_file_with_covers_bits_is_rejected(void)
+{
+    Settings settings = custom_settings();
+    uint8_t bytes[SETTINGS_FILE_SIZE];
+    settings_encode(&settings, bytes);
+    bytes[VERSION_FIELD] = 7;
+    bytes[ORIENTATION_FIELD] = 1 << 2;
+    rewrite_checksum(bytes);
+    CHECK(!settings_decode(bytes, sizeof bytes, &settings));
+}
+
+static void an_unknown_background_covers_value_is_rejected(void)
+{
+    Settings settings = custom_settings();
+    uint8_t bytes[SETTINGS_FILE_SIZE];
+    settings_encode(&settings, bytes);
+    bytes[ORIENTATION_FIELD] = BACKGROUND_COVERS_COUNT << 2;
+    rewrite_checksum(bytes);
+    CHECK(!settings_decode(bytes, sizeof bytes, &settings));
+    bytes[ORIENTATION_FIELD] = 0x10;
     rewrite_checksum(bytes);
     CHECK(!settings_decode(bytes, sizeof bytes, &settings));
 }
@@ -367,6 +436,12 @@ int main(void)
         TEST_CASE(an_unknown_language_is_rejected),
         TEST_CASE(an_unknown_orientation_is_rejected),
         TEST_CASE(a_newer_version_is_rejected),
+        TEST_CASE(background_covers_share_the_orientation_byte),
+        TEST_CASE(every_background_covers_choice_survives_a_save),
+        TEST_CASE(background_covers_default_to_always),
+        TEST_CASE(a_version_seven_file_loads_with_background_covers_always),
+        TEST_CASE(a_version_seven_file_with_covers_bits_is_rejected),
+        TEST_CASE(an_unknown_background_covers_value_is_rejected),
         TEST_CASE(the_filter_and_balance_share_byte_nineteen),
         TEST_CASE(a_version_six_file_loads_with_the_first_filter_and_centred_balance),
         TEST_CASE(the_accent_and_percent_choice_share_the_language_byte),

@@ -79,12 +79,13 @@ void cover_filler_follow(CoverFiller *filler, const CoverFillerLinks *links, uin
 
 bool cover_filler_due(const CoverFiller *filler, CoverFillerWorld world, uint32_t now_ms)
 {
-    if (filler->complete || world.display_on || world.rescan_waiting ||
+    if (!world.enabled || filler->complete || world.display_on || world.rescan_waiting ||
         now_ms - filler->quiet_since_ms < COVER_FILL_QUIET_MS) {
         return false;
     }
     HalBattery battery = hal_power_battery();
-    CoverFillConditions conditions = {.playing = false,
+    CoverFillConditions conditions = {.enabled = world.enabled,
+                                      .playing = false,
                                       .quiet_since_ms = filler->quiet_since_ms,
                                       .display_on = world.display_on,
                                       .usb_power = battery.usb_power,

@@ -13,7 +13,7 @@ static bool power_allows(const CoverFillConditions *conditions)
 
 bool cover_fill_ready(const CoverFillConditions *conditions, uint32_t now_ms)
 {
-    return conditions->work_left && quiet_long_enough(conditions, now_ms) &&
+    return conditions->enabled && conditions->work_left && quiet_long_enough(conditions, now_ms) &&
            !conditions->display_on && power_allows(conditions) && !conditions->restart_pending &&
            !conditions->rescan_waiting;
 }
