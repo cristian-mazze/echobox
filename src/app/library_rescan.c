@@ -469,7 +469,8 @@ static ScanResult fill_in(const LibraryScanEntry *entry, RescanFiles *files,
 static ScanResult fill_with_code(RescanFiles *files, const CoverFillRequest *request,
                                  CoverStats *stats)
 {
-    const LibraryScanEntry *entry = hal_system_load_rescan_code();
+    const LibraryScanEntry *entry =
+        request->play != NULL ? hal_system_load_play_code() : hal_system_load_rescan_code();
     if (entry == NULL || entry->magic != LIBRARY_SCAN_MAGIC) {
         return SCAN_NO_CODE;
     }

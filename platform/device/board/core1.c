@@ -14,6 +14,9 @@ enum {
     LOWEST_PLL_MHZ = 96,
     FULL_SPEED_MHZ = 200,
     CORE1_RAM_BYTES = 0x60000,
+    PLAY_GUARD_BYTES = 4096,
+    PLAY_ALIGN = 4096,
+    PLAY_MIN_BYTES = 48 * 1024,
     STAGING_WORDS = 1024,
     WORD_BYTES = 4,
     DECODE_TIMEOUT_MS = 10000,
@@ -34,6 +37,7 @@ static uint32_t accel_classes;
 
 static HalCore1Accel run_accel_test(void);
 static Core1Program streaming_program;
+static uint32_t program_bytes;
 static uint32_t streaming_divider;
 static EqualizerCurve equalizer_curve;
 static uint32_t equalizer_version;
@@ -130,6 +134,7 @@ static Core1Result place_program(Core1Program program)
     if (le32(header) != PROGRAM_MAGIC || size == 0 || size > CORE1_CODE_BYTES) {
         return CORE1_BAD_REPLY;
     }
+    program_bytes = size;
     core1_hold(&BUS);
     if (!copy_program_sectors(header_sector + 1, size, crc)) {
         return CORE1_BAD_REPLY;
@@ -335,12 +340,20 @@ void *hal_system_borrow_scratch(uint32_t *size)
 
 void *hal_system_borrow_play_memory(uint32_t *size)
 {
+    uint32_t start =
+        (program_bytes + PLAY_GUARD_BYTES + PLAY_ALIGN - 1) & ~(uint32_t)(PLAY_ALIGN - 1);
     *size = 0;
-    return NULL;
+    if (!streaming || streaming_program == CORE1_PROGRAM_OPUS || start >= CORE1_CODE_BYTES ||
+        CORE1_CODE_BYTES - start < PLAY_MIN_BYTES) {
+        return NULL;
+    }
+    *size = CORE1_CODE_BYTES - start;
+    return (void *)(uintptr_t)(CORE1_CODE_BASE + start);
 }
 
 void hal_system_return_play_memory(void)
 {
+    board_glyphs_start();
 }
 
 void hal_system_return_scratch(void)

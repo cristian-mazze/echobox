@@ -1193,6 +1193,11 @@ bool hal_language_pack(uint32_t language, const uint8_t **pack, uint32_t *size)
     return true;
 }
 
+const void *hal_system_load_play_code(void)
+{
+    return &LIBRARY_SCAN_ENTRY;
+}
+
 const void *hal_system_load_rescan_code(void)
 {
     return &LIBRARY_SCAN_ENTRY;

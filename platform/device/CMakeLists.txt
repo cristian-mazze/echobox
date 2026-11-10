@@ -21,6 +21,7 @@ add_executable(echo_device
     board/mmc.c
     board/overlay.c
     board/panic.c
+    board/play.c
     board/power.c
     board/sd.c
     board/start_info.c
@@ -159,6 +160,7 @@ if(CMAKE_CROSSCOMPILING)
         board/main.c
         board/overlay.c
         board/panic.c
+        board/play.c
         board/power.c
         board/start_info.c
         board/storage.c
@@ -196,6 +198,29 @@ target_link_options(echo_rescan_overlay PRIVATE
     -Wl,--just-symbols=$<TARGET_FILE:echo_device>
     -Wl,--allow-multiple-definition
     -Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/echo_rescan_overlay.map
+)
+
+set(ECHO_PLAY_OVERLAY_LINKER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/overlay/play_overlay.ld)
+add_executable(echo_play_overlay overlay/play_overlay.c)
+set_target_properties(echo_play_overlay PROPERTIES
+    SUFFIX .elf
+    LINK_DEPENDS "${ECHO_PLAY_OVERLAY_LINKER_SCRIPT};$<TARGET_FILE:echo_device>"
+)
+add_dependencies(echo_play_overlay echo_device)
+target_link_libraries(echo_play_overlay PRIVATE echo_library_scan echo_options gcc)
+target_link_options(echo_play_overlay PRIVATE
+    -T${ECHO_PLAY_OVERLAY_LINKER_SCRIPT}
+    -Wl,--just-symbols=$<TARGET_FILE:echo_device>
+    -Wl,--allow-multiple-definition
+    -Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/echo_play_overlay.map
+)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_custom_target(echo_play_overlay_file ALL
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/play_overlay.py
+        --elf $<TARGET_FILE:echo_play_overlay>
+        --output ${CMAKE_BINARY_DIR}/play_overlay.bin
+    BYPRODUCTS ${CMAKE_BINARY_DIR}/play_overlay.bin
+    DEPENDS echo_play_overlay
 )
 
 set(ECHO_FIRMWARE_VERSION "0.9.1" CACHE STRING "major.minor.patch written to the image header")

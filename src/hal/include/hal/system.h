@@ -81,6 +81,7 @@ typedef struct HalHighRamTest {
 HalHighRamTest hal_system_high_ram_test(void);
 bool hal_system_restart_pending(void);
 const void *hal_system_load_rescan_code(void);
+const void *hal_system_load_play_code(void);
 void *hal_system_borrow_scratch(uint32_t *size);
 void *hal_system_borrow_listing(uint32_t *size);
 void *hal_system_borrow_play_memory(uint32_t *size);
