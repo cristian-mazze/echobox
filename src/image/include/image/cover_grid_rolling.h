@@ -5,6 +5,7 @@
 
 #include "image/cover_grid.h"
 #include "image/cover_row_sink.h"
+#include "image/cover_yield.h"
 #include "image/image_arena.h"
 
 enum {
@@ -16,6 +17,7 @@ enum {
 typedef struct CoverGridRolling {
     CoverGrid *grid;
     CoverRowSink sink;
+    CoverYield *yield;
     uint32_t next_row;
     bool prepared;
     int32_t held[COVER_GRID_CHANNELS][COVER_GRID_SIZE];

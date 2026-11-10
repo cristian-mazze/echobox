@@ -487,7 +487,7 @@ static bool decode_interleaved(JpegDecoder *decoder, const JpegScan *scan)
         }
         for (uint32_t mcu_x = 0; mcu_x < decoder->mcus_wide; mcu_x++) {
             restart_due(decoder, &units);
-            if (!decode_mcu(decoder, scan, mcu_x, mcu_y)) {
+            if (!decode_mcu(decoder, scan, mcu_x, mcu_y) || !cover_yield_point(decoder->yield)) {
                 return false;
             }
         }
@@ -509,7 +509,8 @@ static bool decode_single(JpegDecoder *decoder, const JpegScan *scan)
         }
         for (uint32_t block_x = 0; block_x < component->blocks_wide; block_x++) {
             restart_due(decoder, &units);
-            if (!decode_block_at(decoder, scan, member, block_x, block_y)) {
+            if (!decode_block_at(decoder, scan, member, block_x, block_y) ||
+                !cover_yield_point(decoder->yield)) {
                 return false;
             }
         }
@@ -656,6 +657,7 @@ CoverImageResult jpeg_decode(ImageReader *reader, ImageArena *arena, CoverImage 
     }
     decoder->reader = reader;
     decoder->grid = image->grid;
+    decoder->yield = image->yield;
     decoder->frame_seen = false;
     decoder->adobe_rgb = false;
     decoder->restart_interval = 0;

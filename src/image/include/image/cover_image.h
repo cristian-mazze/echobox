@@ -5,6 +5,7 @@
 
 #include "image/cover_grid.h"
 #include "image/cover_row_sink.h"
+#include "image/cover_yield.h"
 #include "image/image_arena.h"
 #include "image/image_reader.h"
 
@@ -21,6 +22,7 @@ typedef enum CoverImageResult {
 typedef struct CoverImage {
     CoverGrid *grid;
     CoverColor color;
+    CoverYield *yield;
 } CoverImage;
 
 CoverImageResult png_decode(ImageReader *reader, ImageArena *arena, CoverImage *image);
@@ -32,5 +34,11 @@ typedef struct CoverImageMemory {
 
 CoverImageResult cover_image_decode(ImageSource source, void *memory, uint32_t size, uint16_t *full,
                                     uint16_t *half);
-CoverImageResult cover_image_decode_rows(ImageSource source, const CoverImageMemory *memory,
-                                         CoverRowSink sink);
+typedef struct CoverRowsRequest {
+    ImageSource source;
+    CoverImageMemory memory;
+    CoverRowSink sink;
+    CoverYield *yield;
+} CoverRowsRequest;
+
+CoverImageResult cover_image_decode_rows(const CoverRowsRequest *request);

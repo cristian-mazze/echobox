@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "image/cover_yield.h"
 #include "image/image_arena.h"
 
 enum {
@@ -23,6 +24,7 @@ typedef struct ImageReader {
     uint32_t filled;
     uint32_t cursor;
     bool failed;
+    CoverYield *yield;
 } ImageReader;
 
 bool image_reader_init(ImageReader *reader, ImageSource source, ImageArena *arena);

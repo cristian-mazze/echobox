@@ -80,6 +80,7 @@ typedef struct JpegDecoder {
     int32_t kernel[8][8];
     bool progressive;
     CoverImageResult stop;
+    CoverYield *yield;
     bool frame_seen;
     bool adobe_rgb;
     uint32_t scanned;

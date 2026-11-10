@@ -4,7 +4,7 @@
 
 bool image_reader_init(ImageReader *reader, ImageSource source, ImageArena *arena)
 {
-    *reader = (ImageReader){.source = source, .failed = false};
+    *reader = (ImageReader){.source = source, .failed = false, .yield = NULL};
     reader->buffer = image_arena_take(arena, IMAGE_READER_BUFFER);
     return reader->buffer != NULL;
 }
@@ -36,6 +36,10 @@ static bool refill(ImageReader *reader)
         return false;
     }
     reader->filled += count;
+    if (!cover_yield_point(reader->yield)) {
+        reader->failed = true;
+        return false;
+    }
     return true;
 }
 

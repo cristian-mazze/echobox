@@ -62,6 +62,7 @@ typedef struct PngRows {
     bool corrupt;
     bool cancelled;
     CoverColor color;
+    CoverYield *yield;
 } PngRows;
 
 typedef struct PngStream {
@@ -292,7 +293,7 @@ static bool finish_row(PngRows *rows)
         return false;
     }
     emit_row(rows);
-    if (rows->cancelled) {
+    if (rows->cancelled || !cover_yield_point(rows->yield)) {
         return false;
     }
     uint8_t *swap = rows->previous;
@@ -449,7 +450,8 @@ CoverImageResult png_decode(ImageReader *reader, ImageArena *arena, CoverImage *
     if (decoder == NULL) {
         return COVER_IMAGE_NO_MEMORY;
     }
-    decoder->rows = (PngRows){.grid = image->grid, .palette_size = 0, .color = COVER_COLOR_RGB};
+    decoder->rows = (PngRows){
+        .grid = image->grid, .palette_size = 0, .color = COVER_COLOR_RGB, .yield = image->yield};
     decoder->stream = (PngStream){.reader = reader, .left = 0};
     CoverImageResult result = read_header(reader, &decoder->rows.header);
     const PngHeader *header = &decoder->rows.header;

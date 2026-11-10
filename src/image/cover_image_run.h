@@ -2,5 +2,11 @@
 
 #include "image/cover_image.h"
 
-CoverImageResult cover_image_run(ImageSource source, ImageArena *arena, CoverGrid *grid,
-                                 CoverColor *color);
+typedef struct CoverImageRun {
+    ImageSource source;
+    ImageArena *arena;
+    CoverGrid *grid;
+    CoverYield *yield;
+} CoverImageRun;
+
+CoverImageResult cover_image_run(const CoverImageRun *run, CoverColor *color);

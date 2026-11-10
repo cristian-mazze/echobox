@@ -102,6 +102,7 @@ CoverGrid *cover_grid_rolling_open(CoverGridRolling *rolling, ImageArena *arena,
     grid->reach_context = rolling;
     rolling->grid = grid;
     rolling->sink = sink;
+    rolling->yield = NULL;
     rolling->next_row = 0;
     rolling->prepared = false;
     return grid;
