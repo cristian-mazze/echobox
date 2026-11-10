@@ -7,6 +7,7 @@ add_library(echo_app STATIC
     browse_screen.c
     cover_cache.c
     cover_fill_policy.c
+    cover_play_policy.c
     cover_filler.c
     cover_queue.c
     cover_state_store.c

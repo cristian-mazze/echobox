@@ -230,3 +230,23 @@ Phase 2 lets `cover_image_decode_rows` give the caller a turn at least every `sl
 - PNG stays above the ceiling because a row of inflate runs between two points, as phase 0 found. It remains paused only until inflate gets its own yield points.
 - Sizes after phase 2: main code window 151,916 of 157,292 B, code plus `.data` and `.bss` 436,900 of 437,600 B, rescan overlay 85,724 of 86,016 B (292 B spare). The overlay grew by 264 B since phase 1 for the hook calls in the decoders and the reader.
 - The yield callback runs on the decoder's stack. The 8,416 B peak of phase 0 has not changed, but the stack of the service it calls still has to be measured on top of that in phase 4.
+
+## Phase 4, first part: start conditions and fallback
+
+`app/cover_play_policy` holds the rules of the limits table as pure functions over a `CoverPlayInput` (playing, sample rate, `buffered_ms`, underruns), so they are tested without a device:
+
+- It tracks the full `buffered_ms` level seen for the current track (`cover_play_observe`, reset by `cover_play_track_changed`) and freezes it when a session starts.
+- `cover_play_may_start`: not disabled, playing, 1 to 48,000 Hz, and `buffered_ms` at 85 % of the full level.
+- `cover_play_may_continue`: false below 50 % of the full level (the session is cancelled, level 2 stays on), and false for good after any new underrun.
+- `cover_play_may_write`: card writes only at 85 % or more.
+- `cover_play_note_gap`: a measured gap over 10 ms (for example `CoverYield.longest_ms` between two audio services) switches level 2 off until the next boot.
+
+`test_cover_play_policy` covers each rule. Nothing calls the policy yet.
+
+### What is still open
+
+Phase 3 and the rest of phase 4 need decisions and measurements that only the player can give, so they have not been started:
+
+- **Where the decoder runs.** The level 1 session borrows core 1's RAM, which playback uses, so level 2 needs its own regions (`CoverImageMemory` is 34.8 KB for JPEG). Mapping it onto `GLYPH_RAM` (53,248 B, free while the screen is off) means loading code there on demand, as `board/overlay.c` does for the rescan, and checking that nothing draws text while it is loaded.
+- **A level 2 fill path.** `library_rescan_fill` finds the art through the tag readers and decodes with the whole grid. Level 2 needs the art location without the tag readers (the 22 KB estimate), a writer that stores each finished row of `covers.bin` in chunks of 4 KB or less, and a service callback that runs `hal_audio_service` and feeds `cover_play_policy`.
+- **Device measurements.** The stack of the audio service on top of the decoder's 8.4 KB, the real gap between services, and the size of the real overlay against the estimate.
