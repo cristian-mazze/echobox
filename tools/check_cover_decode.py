@@ -14,7 +14,10 @@ FULL = 112
 HALF = 56
 RECORD_BYTES = (FULL * FULL + HALF * HALF) * 2
 EXIT_BASE = 10
-RESULTS = {0: "ok", 1: "unsupported", 2: "corrupt", 3: "too big", 4: "no memory"}
+RESULTS = {0: "ok", 1: "unsupported", 2: "corrupt", 3: "too big", 4: "no memory",
+           5: "needs idle", 6: "cancelled"}
+WINDOW_ROWS = 9
+JPEG_FRAMES = (0xC0, 0xC1, 0xC2)
 PASS_STARTS = [(0, 0, 8, 8), (4, 0, 8, 8), (0, 4, 4, 8), (2, 0, 4, 4), (0, 2, 2, 4), (1, 0, 2, 2),
                (0, 1, 1, 2)]
 FUZZ_ROUNDS = 40
@@ -261,7 +264,30 @@ def jpeg_cases():
         jpeg_case("jpeg_odd_size", smooth(333, 517, 10), quality=88),
         jpeg_case("jpeg_progressive_small", smooth(100, 150, 11), quality=90, progressive=True),
         jpeg_case("jpeg_huge", smooth(1800, 1200, 12), quality=92),
-    ]
+    ] + rolling_jpeg_cases()
+
+
+def rolling_jpeg_cases():
+    cases = []
+    for name, subsampling in (("444", 0), ("422", 1), ("420", 2)):
+        for restart in (0, 5):
+            options = {"quality": 90, "subsampling": subsampling}
+            if restart:
+                options["restart_marker_blocks"] = restart
+            cases.append(jpeg_case(f"jpeg_rolling_{name}_restart{restart}",
+                                   smooth(480, 480, 30 + subsampling), **options))
+    for side, scale in ((160, "1_1"), (300, "1_2"), (600, "1_4"), (1000, "1_8")):
+        cases.append(jpeg_case(f"jpeg_scale_{scale}", smooth(side, side, 40), quality=90,
+                               subsampling=0))
+    cases.append(jpeg_case("jpeg_offcentre_wide_422", smooth(1000, 400, 50), quality=90,
+                           subsampling=1))
+    cases.append(jpeg_case("jpeg_offcentre_tall_444", smooth(300, 900, 51), quality=90,
+                           subsampling=0))
+    cases.append(jpeg_case("jpeg_offcentre_wide_420", smooth(900, 480, 52), quality=90,
+                           subsampling=2))
+    cases.append(jpeg_case("jpeg_window_too_narrow_420", smooth(200, 200, 53), quality=90,
+                           subsampling=2))
+    return cases
 
 
 def png_cases():
@@ -300,8 +326,41 @@ def failing_cases():
     ]
 
 
-def run_tool(tool, image_path, record_path):
-    result = subprocess.run([str(tool), str(image_path), str(record_path)], capture_output=True)
+def jpeg_frame(data):
+    offset = 2
+    while offset + 4 <= len(data):
+        marker = data[offset + 1]
+        length = struct.unpack_from(">H", data, offset + 2)[0]
+        if marker in JPEG_FRAMES:
+            height, width, count = struct.unpack_from(">HHB", data, offset + 5)
+            factors = [data[offset + 11 + 3 * index] for index in range(count)]
+            return marker, width, height, max(f & 15 for f in factors)
+        offset += 2 + length
+    return None
+
+
+def window_covers(width, height, band):
+    span = min(width, height)
+    return (span - 1 + band * FULL - 1) // span + 1 <= WINDOW_ROWS
+
+
+def rolling_expectation(data):
+    if data[:2] == bytes([0xFF, 0xD8]):
+        frame = jpeg_frame(data)
+        if frame is None:
+            return None
+        marker, width, height, v_max = frame
+        return "ok" if marker != 0xC2 and window_covers(width, height, 8 * v_max) else "needs idle"
+    if data[1:4] == b"PNG":
+        width, height = struct.unpack_from(">II", data, 16)
+        interlaced = data[28] == 1
+        return "ok" if not interlaced and window_covers(width, height, 1) else "needs idle"
+    return None
+
+
+def run_tool(tool, image_path, record_path, rolling=False):
+    command = [str(tool)] + (["--rolling"] if rolling else []) + [str(image_path), str(record_path)]
+    result = subprocess.run(command, capture_output=True)
     if result.returncode == 0:
         return "ok"
     return RESULTS.get(result.returncode - EXIT_BASE, f"exit {result.returncode}")
@@ -320,11 +379,27 @@ def check_case(tool, work, case):
     record = record_path.read_bytes()
     if len(record) != RECORD_BYTES:
         return f"{case.name}: record is {len(record)} bytes"
+    rolled = check_rolling(tool, work, case, record)
+    if rolled is not None:
+        return rolled
     mean, worst, p99 = compare(record, reference_record(case.reference))
     passed = mean <= case.mean_limit and worst <= case.max_limit and p99 <= case.p99_limit
     print(f"{'ok  ' if passed else 'FAIL'} {case.name}: mean {mean:.2f} (limit {case.mean_limit}), "
           f"99% {p99} (limit {case.p99_limit}), worst {worst} (limit {case.max_limit})")
     return None if passed else f"{case.name}: mean {mean:.2f}, 99% {p99}, worst {worst}"
+
+
+def check_rolling(tool, work, case, record):
+    image_path = work / case.name
+    rolling_path = work / f"{case.name}.rolling"
+    expected = rolling_expectation(case.data)
+    outcome = run_tool(tool, image_path, rolling_path, rolling=True)
+    if outcome != expected:
+        return f"{case.name}: rolling expected {expected}, got {outcome}"
+    if outcome == "ok" and rolling_path.read_bytes() != record:
+        return f"{case.name}: the rolling record differs from the full grid record"
+    print(f"ok   {case.name}: rolling {outcome}")
+    return None
 
 
 def fuzz(tool, work, cases):
@@ -335,6 +410,13 @@ def fuzz(tool, work, cases):
         print(result.stdout.strip())
         if result.returncode != 0 or result.stderr:
             failures.append(f"fuzz {case.name}: exit {result.returncode} {result.stderr.strip()}")
+        rolling = subprocess.run([str(tool), "--rolling", "--fuzz", str(work / case.name),
+                                  str(FUZZ_ROUNDS), str(index + 1)], capture_output=True,
+                                 text=True, timeout=300)
+        print(rolling.stdout.strip())
+        if rolling.returncode != 0 or rolling.stderr:
+            failures.append(f"rolling fuzz {case.name}: exit {rolling.returncode} "
+                            f"{rolling.stderr.strip()}")
     return failures
 
 

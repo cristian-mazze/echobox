@@ -43,11 +43,59 @@ static bool load(const char *path, Memory *memory)
     return read;
 }
 
-static CoverImageResult decode(Memory *memory, uint16_t *full, uint16_t *half)
+typedef struct Rows {
+    uint16_t *full;
+    uint16_t *half;
+    uint32_t full_count;
+    uint32_t half_count;
+} Rows;
+
+static bool take_full(void *context, uint32_t y, const uint16_t *pixels)
+{
+    Rows *rows = context;
+    if (y != rows->full_count || y >= COVER_GRID_SIZE) {
+        return false;
+    }
+    memcpy(rows->full + y * COVER_GRID_SIZE, pixels, COVER_GRID_SIZE * sizeof pixels[0]);
+    rows->full_count++;
+    return true;
+}
+
+static bool take_half(void *context, uint32_t y, const uint16_t *pixels)
+{
+    Rows *rows = context;
+    if (y != rows->half_count || y >= COVER_GRID_HALF) {
+        return false;
+    }
+    memcpy(rows->half + y * COVER_GRID_HALF, pixels, COVER_GRID_HALF * sizeof pixels[0]);
+    rows->half_count++;
+    return true;
+}
+
+static CoverImageResult decode_rolling(Memory *memory, uint16_t *full, uint16_t *half)
+{
+    static uint8_t scratch[SCRATCH_BYTES];
+    ImageSource source = {read_memory, memory, 0, memory->size};
+    CoverImageMemory plan = {scratch, sizeof scratch};
+    Rows rows = {full, half, 0, 0};
+    CoverRowSink sink = {take_full, take_half, &rows};
+    CoverImageResult result = cover_image_decode_rows(source, &plan, sink);
+    bool complete = rows.full_count == COVER_GRID_SIZE && rows.half_count == COVER_GRID_HALF;
+    return result == COVER_IMAGE_OK && !complete ? COVER_IMAGE_CORRUPT : result;
+}
+
+static CoverImageResult decode_full(Memory *memory, uint16_t *full, uint16_t *half)
 {
     static uint8_t scratch[SCRATCH_BYTES];
     ImageSource source = {read_memory, memory, 0, memory->size};
     return cover_image_decode(source, scratch, sizeof scratch, full, half);
+}
+
+static bool rolling_mode;
+
+static CoverImageResult decode(Memory *memory, uint16_t *full, uint16_t *half)
+{
+    return rolling_mode ? decode_rolling(memory, full, half) : decode_full(memory, full, half);
 }
 
 static bool write_record(const char *path, const uint16_t *full, const uint16_t *half)
@@ -108,12 +156,18 @@ int main(int argc, char **argv)
 {
     static uint16_t full[COVER_GRID_CELLS];
     static uint16_t half[COVER_GRID_HALF_CELLS];
+    if (argc > 1 && strcmp(argv[1], "--rolling") == 0) {
+        rolling_mode = true;
+        argc--;
+        argv++;
+    }
     if (argc == 5 && strcmp(argv[1], "--fuzz") == 0) {
         return fuzz(argv[2], (uint32_t)atoi(argv[3]), (uint32_t)atoi(argv[4]));
     }
     Memory memory;
     if (argc != 3 || !load(argv[1], &memory)) {
-        fprintf(stderr, "usage: cover_decode_tool IMAGE RECORD | --fuzz IMAGE ROUNDS SEED\n");
+        fprintf(stderr, "usage: cover_decode_tool [--rolling] IMAGE RECORD | [--rolling] --fuzz "
+                        "IMAGE ROUNDS SEED\n");
         return 1;
     }
     CoverImageResult result = decode(&memory, full, half);
