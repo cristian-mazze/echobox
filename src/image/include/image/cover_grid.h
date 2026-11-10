@@ -48,3 +48,6 @@ void cover_grid_row_start(CoverGrid *grid);
 void cover_grid_row_pixel(CoverGrid *grid, uint32_t x, const int32_t *values, uint32_t channels);
 void cover_grid_row_finish(CoverGrid *grid, uint32_t y, uint32_t channels);
 void cover_grid_render(CoverGrid *grid, CoverColor color, uint16_t *full, uint16_t *half);
+void cover_grid_prepare_render(CoverGrid *grid, CoverColor color);
+void cover_grid_render_row(const CoverGrid *grid, CoverColor color, uint32_t y, uint16_t *out);
+void cover_grid_render_half_row(const CoverGrid *grid, CoverColor color, uint32_t y, uint16_t *out);

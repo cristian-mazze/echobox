@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "check.h"
 #include "image/cover_grid.h"
@@ -181,6 +182,30 @@ static void rectangles_outside_the_crop_do_not_touch_it(void)
     free(grid);
 }
 
+static void rendering_row_by_row_matches_the_whole_render(void)
+{
+    static uint16_t rows[COVER_GRID_CELLS];
+    static uint16_t half_rows[COVER_GRID_HALF_CELLS];
+    CoverGrid *grid = new_grid(300, 250);
+    for (uint32_t y = 0; y < 250; y++) {
+        for (uint32_t x = 0; x < 300; x++) {
+            add_pixel(grid, x, y, (int32_t)(x * 7 % 256), (int32_t)(y * 5 % 256),
+                      (int32_t)((x + y) % 256));
+        }
+    }
+    cover_grid_render(grid, COVER_COLOR_RGB, full, half);
+    cover_grid_prepare_render(grid, COVER_COLOR_RGB);
+    for (uint32_t y = 0; y < FULL; y++) {
+        cover_grid_render_row(grid, COVER_COLOR_RGB, y, rows + y * FULL);
+    }
+    for (uint32_t y = 0; y < HALF; y++) {
+        cover_grid_render_half_row(grid, COVER_COLOR_RGB, y, half_rows + y * HALF);
+    }
+    CHECK(memcmp(full, rows, sizeof rows) == 0);
+    CHECK(memcmp(half, half_rows, sizeof half_rows) == 0);
+    free(grid);
+}
+
 int main(void)
 {
     static const TestCase cases[] = {
@@ -191,6 +216,7 @@ int main(void)
         TEST_CASE(a_small_image_is_scaled_up_by_repeating_pixels),
         TEST_CASE(half_resolution_chroma_converts_to_rgb),
         TEST_CASE(rectangles_outside_the_crop_do_not_touch_it),
+        TEST_CASE(rendering_row_by_row_matches_the_whole_render),
     };
     return test_run_all(cases, TEST_CASE_COUNT(cases));
 }

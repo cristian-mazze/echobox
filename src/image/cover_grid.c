@@ -2,17 +2,11 @@
 
 #include <stddef.h>
 
+#include "cover_render.h"
+
 enum {
     CELLS = COVER_GRID_SIZE,
-    HALF = COVER_GRID_HALF,
-    Q8_ONE = 256,
-    BYTE_MAX = 255,
-    CHROMA_CENTER_Q8 = 128 * Q8_ONE,
-    CR_TO_R = 91881,
-    CB_TO_G = 22554,
-    CR_TO_G = 46802,
-    CB_TO_B = 116130,
-    COEFFICIENT_SHIFT = 16
+    HALF = COVER_GRID_HALF
 };
 
 typedef struct CoverSpan {
@@ -192,107 +186,50 @@ static void axis_totals(uint32_t start, uint32_t span, uint32_t sample, uint32_t
     }
 }
 
-static int32_t mean_q8(int64_t sum, uint64_t weight)
+void cover_grid_prepare_render(CoverGrid *grid, CoverColor color)
 {
-    if (weight == 0) {
-        return 0;
-    }
-    int64_t scaled = sum * Q8_ONE;
-    int64_t half = (int64_t)(weight / 2);
-    return (int32_t)(scaled >= 0 ? (scaled + half) / (int64_t)weight
-                                 : -((-scaled + half) / (int64_t)weight));
-}
-
-static uint8_t to_byte(int32_t q8)
-{
-    int32_t value = (q8 + Q8_ONE / 2) / Q8_ONE;
-    if (q8 < 0) {
-        return 0;
-    }
-    return (uint8_t)(value > BYTE_MAX ? BYTE_MAX : value);
-}
-
-static int32_t scaled(int32_t value, int32_t coefficient)
-{
-    int64_t product = (int64_t)value * coefficient;
-    return (int32_t)(product / (1 << COEFFICIENT_SHIFT));
-}
-
-static uint16_t rgb565(uint8_t red, uint8_t green, uint8_t blue)
-{
-    return (uint16_t)((red >> 3) << 11 | (green >> 2) << 5 | (blue >> 3));
-}
-
-static uint16_t pixel(CoverColor color, const int32_t *q8)
-{
-    if (color == COVER_COLOR_GRAY) {
-        uint8_t gray = to_byte(q8[0]);
-        return rgb565(gray, gray, gray);
-    }
-    if (color == COVER_COLOR_RGB) {
-        return rgb565(to_byte(q8[0]), to_byte(q8[1]), to_byte(q8[2]));
-    }
-    int32_t cb = q8[1] - CHROMA_CENTER_Q8;
-    int32_t cr = q8[2] - CHROMA_CENTER_Q8;
-    int32_t red = q8[0] + scaled(cr, CR_TO_R);
-    int32_t green = q8[0] - scaled(cb, CB_TO_G) - scaled(cr, CR_TO_G);
-    int32_t blue = q8[0] + scaled(cb, CB_TO_B);
-    return rgb565(to_byte(red), to_byte(green), to_byte(blue));
-}
-
-static uint32_t used_channels(CoverColor color)
-{
-    return color == COVER_COLOR_GRAY ? 1 : COVER_GRID_CHANNELS;
-}
-
-static void render_full(const CoverGrid *grid, CoverColor color, uint16_t *full)
-{
-    int32_t q8[COVER_GRID_CHANNELS] = {0, 0, 0};
-    for (uint32_t cell = 0; cell < COVER_GRID_CELLS; cell++) {
-        for (uint32_t channel = 0; channel < used_channels(color); channel++) {
-            uint64_t weight = (uint64_t)grid->totals_x[channel][cell % CELLS] *
-                              grid->totals_y[channel][cell / CELLS];
-            q8[channel] = mean_q8(grid->sums[channel][cell], weight);
-        }
-        full[cell] = pixel(color, q8);
-    }
-}
-
-static int64_t half_sum(const int32_t *sums, uint32_t x, uint32_t y)
-{
-    uint32_t cell = 2 * y * CELLS + 2 * x;
-    return (int64_t)sums[cell] + sums[cell + 1] + sums[cell + CELLS] + sums[cell + CELLS + 1];
-}
-
-static uint64_t half_weight(const CoverGrid *grid, uint32_t channel, uint32_t x, uint32_t y)
-{
-    const uint32_t *across = grid->totals_x[channel];
-    const uint32_t *down = grid->totals_y[channel];
-    return (uint64_t)(across[2 * x] + across[2 * x + 1]) * (down[2 * y] + down[2 * y + 1]);
-}
-
-static void render_half(const CoverGrid *grid, CoverColor color, uint16_t *half)
-{
-    int32_t q8[COVER_GRID_CHANNELS] = {0, 0, 0};
-    for (uint32_t y = 0; y < HALF; y++) {
-        for (uint32_t x = 0; x < HALF; x++) {
-            for (uint32_t channel = 0; channel < used_channels(color); channel++) {
-                q8[channel] =
-                    mean_q8(half_sum(grid->sums[channel], x, y), half_weight(grid, channel, x, y));
-            }
-            half[y * HALF + x] = pixel(color, q8);
-        }
-    }
-}
-
-void cover_grid_render(CoverGrid *grid, CoverColor color, uint16_t *full, uint16_t *half)
-{
-    for (uint32_t channel = 0; channel < used_channels(color); channel++) {
+    uint32_t channels = color == COVER_COLOR_GRAY ? 1 : COVER_GRID_CHANNELS;
+    for (uint32_t channel = 0; channel < channels; channel++) {
         axis_totals(grid->start_x, grid->span, grid->sample_width[channel],
                     grid->totals_x[channel]);
         axis_totals(grid->start_y, grid->span, grid->sample_height[channel],
                     grid->totals_y[channel]);
     }
-    render_full(grid, color, full);
-    render_half(grid, color, half);
+}
+
+static CoverRowCells row_cells(const CoverGrid *grid, uint32_t cell_row)
+{
+    CoverRowCells cells;
+    uint32_t below = cell_row + 1 < CELLS ? cell_row + 1 : cell_row;
+    for (uint32_t channel = 0; channel < COVER_GRID_CHANNELS; channel++) {
+        cells.top[channel] = grid->sums[channel] + cell_row * CELLS;
+        cells.bottom[channel] = grid->sums[channel] + below * CELLS;
+        cells.totals_x[channel] = grid->totals_x[channel];
+        cells.totals_top[channel] = grid->totals_y[channel][cell_row];
+        cells.totals_bottom[channel] = grid->totals_y[channel][below];
+    }
+    return cells;
+}
+
+void cover_grid_render_row(const CoverGrid *grid, CoverColor color, uint32_t y, uint16_t *out)
+{
+    CoverRowCells cells = row_cells(grid, y);
+    cover_render_full_row(&cells, color, out);
+}
+
+void cover_grid_render_half_row(const CoverGrid *grid, CoverColor color, uint32_t y, uint16_t *out)
+{
+    CoverRowCells cells = row_cells(grid, 2 * y);
+    cover_render_half_row(&cells, color, out);
+}
+
+void cover_grid_render(CoverGrid *grid, CoverColor color, uint16_t *full, uint16_t *half)
+{
+    cover_grid_prepare_render(grid, color);
+    for (uint32_t y = 0; y < CELLS; y++) {
+        cover_grid_render_row(grid, color, y, full + y * CELLS);
+    }
+    for (uint32_t y = 0; y < HALF; y++) {
+        cover_grid_render_half_row(grid, color, y, half + y * HALF);
+    }
 }
